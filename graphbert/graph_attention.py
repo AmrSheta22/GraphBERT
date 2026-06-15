@@ -113,6 +113,12 @@ class GraphBertSelfAttention(BertSelfAttention):
         output_attentions: Optional[bool] = False,
         **kwargs,
     ):
+        if isinstance(past_key_values, bool):
+            output_attentions = past_key_values
+            past_key_values = None
+        if isinstance(past_key_value, bool):
+            output_attentions = past_key_value
+            past_key_value = None
         if past_key_value is None and past_key_values is not None:
             past_key_value = past_key_values
 
