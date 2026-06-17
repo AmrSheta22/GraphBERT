@@ -1,6 +1,6 @@
 {
   "model_name_or_path": "bert-large-uncased",
-  "output_dir": "outputs/sequential-search/layers1_topk16_row",
+  "output_dir": "outputs/sequential-search/layers4_topk16_row",
   "seed": 1337,
   "dataset": {
     "name": "Salesforce/wikitext",
@@ -12,7 +12,7 @@
     "line_by_line": false
   },
   "graph": {
-    "num_replaced_layers": 1,
+    "num_replaced_layers": 4,
     "replace_final_layers": true,
     "sparsification": "topk",
     "threshold": 0.01,
@@ -26,9 +26,9 @@
     "do_train": true,
     "do_eval": true,
     "overwrite_output_dir": false,
-    "per_device_train_batch_size": 8,
-    "per_device_eval_batch_size": 8,
-    "gradient_accumulation_steps": 4,
+    "per_device_train_batch_size": 2,
+    "per_device_eval_batch_size": 2,
+    "gradient_accumulation_steps": 16,
     "learning_rate": 2e-05,
     "weight_decay": 0.01,
     "adam_beta1": 0.9,
@@ -45,6 +45,7 @@
     "save_total_limit": 1,
     "fp16": true,
     "bf16": false,
+    "gradient_checkpointing": true,
     "dataloader_num_workers": 2,
     "report_to": "tensorboard",
     "mlm_probability": 0.15
