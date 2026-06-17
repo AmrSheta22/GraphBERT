@@ -252,21 +252,12 @@ PY
 RUNS=(
   "baseline_bert_large|0|dense|16|0.01|row|false"
 
-  "layers1_topk16_row|1|topk|16|0.01|row|false"
-  "layers2_topk16_row|2|topk|16|0.01|row|false"
-  "layers4_topk16_row|4|topk|16|0.01|row|false"
-
   "layers2_dense_row|2|dense|16|0.01|row|false"
   "layers2_topk8_row|2|topk|8|0.01|row|false"
   "layers2_topk32_row|2|topk|32|0.01|row|false"
   "layers2_threshold005_row|2|threshold|16|0.005|row|false"
   "layers2_threshold010_row|2|threshold|16|0.01|row|false"
   "layers2_threshold020_row|2|threshold|16|0.02|row|false"
-
-  "layers2_topk16_none|2|topk|16|0.01|none|false"
-  "layers2_topk16_symmetric|2|topk|16|0.01|symmetric|false"
-  "layers2_topk16_row_selfloops|2|topk|16|0.01|row|true"
-  "layers2_topk16_symmetric_selfloops|2|topk|16|0.01|symmetric|true"
 )
 
 for spec in "${RUNS[@]}"; do
