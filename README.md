@@ -24,6 +24,7 @@ scripts/
   train_mlm.py
   evaluate_mlm.py
   download_assets.py
+  run_sequential_search.sh
 graphbert/
   config.py
   data.py
@@ -66,29 +67,32 @@ python scripts/train_mlm.py \
 
 Set `num_replaced_layers: 0` for a vanilla BERT baseline. Avoid replacing all layers unless you intentionally want an unstable ablation.
 
-## Greedy Experiment Search
+## Sequential Experiment Search
 
-Run a baseline plus a stage-wise greedy search over replacement depth, sparsification, and normalization:
+Run a baseline plus explicit sequential iterations over replacement depth, sparsification, and normalization:
 
 ```bash
-python scripts/run_greedy_search.py \
-  --config configs/graphbert_wikitext103.yaml \
-  --output-root outputs/greedy-search \
-  --launcher accelerate \
-  --accelerate-config configs/accelerate_2xt4.yaml
+bash scripts/run_sequential_search.sh
 ```
 
-The runner writes:
+The script writes:
 
-- generated per-run configs: `outputs/greedy-search/generated_configs/`
-- full console logs: `outputs/greedy-search/console_logs/`
-- structured JSONL summary: `outputs/greedy-search/greedy_search.jsonl`
+- generated per-run configs: `outputs/sequential-search/generated_configs/`
+- full console logs: `outputs/sequential-search/console_logs/`
+- structured JSONL summary: `outputs/sequential-search/sequential_search.jsonl`
+- per-run completion markers: `outputs/sequential-search/<run_id>/FINISHED`
 
-The default search includes the `num_replaced_layers: 0` baseline, then greedily chooses the best setting by `eval_loss` across:
+If a run already has a `FINISHED` marker, it is skipped on resume. After every successful run, the script commits and pushes lightweight artifacts: generated config, console log, metrics JSON files, summary log, and the `FINISHED` marker. It does not commit large checkpoint weights unless `INCLUDE_CHECKPOINTS=1` is set.
 
-- replacement layers: `1,2,4`
-- sparsification: dense, top-k, threshold
-- normalization: none, row normalization, symmetric normalization, with/without self-loops
+Useful environment overrides:
+
+```bash
+OUTPUT_ROOT=outputs/my-search \
+COMMIT_RESULTS=1 \
+PUSH_RESULTS=1 \
+INCLUDE_CHECKPOINTS=0 \
+bash scripts/run_sequential_search.sh
+```
 
 The base config now uses `max_seq_length: 512`, `per_device_train_batch_size: 8`, `per_device_eval_batch_size: 8`, `gradient_accumulation_steps: 4`, and `fp16: true`. Override these from the runner if your GPU memory needs a different tradeoff.
 
