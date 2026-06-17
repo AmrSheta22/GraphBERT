@@ -1,0 +1,46 @@
+model_name_or_path: bert-large-uncased
+output_dir: outputs/sequential-search/layers2_topk16_row
+seed: 1337
+dataset:
+  name: Salesforce/wikitext
+  config_name: wikitext-103-raw-v1
+  text_column: text
+  validation_split_percentage: 5
+  max_seq_length: 512
+  preprocessing_num_workers: 4
+  line_by_line: false
+graph:
+  num_replaced_layers: 2
+  replace_final_layers: true
+  sparsification: topk
+  threshold: 0.01
+  top_k: 16
+  renormalize_adjacency: true
+  symmetric_normalization: false
+  add_self_loops: false
+  gcn_weight_init: identity
+training:
+  do_train: true
+  do_eval: true
+  overwrite_output_dir: false
+  per_device_train_batch_size: 8
+  per_device_eval_batch_size: 8
+  gradient_accumulation_steps: 4
+  learning_rate: 2.0e-05
+  weight_decay: 0.01
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  adam_epsilon: 1.0e-08
+  max_steps: 1000
+  warmup_ratio: 0.06
+  logging_steps: 25
+  eval_steps: 100
+  save_steps: 250
+  save_strategy: steps
+  save_only_model: false
+  save_total_limit: 1
+  fp16: true
+  bf16: false
+  dataloader_num_workers: 2
+  report_to: tensorboard
+  mlm_probability: 0.15

@@ -1,0 +1,21 @@
+{
+  "run_id": "layers2_topk16_row",
+  "finished_at": 1781717573.5463834,
+  "last_checkpoint": "outputs/sequential-search/layers2_topk16_row/checkpoint-1000",
+  "metrics": {
+    "epoch": 0.279935614808594,
+    "graph_avg_degree": 16.0,
+    "graph_sparsity": 0.96875,
+    "graph_surviving_edge_pct": 3.125,
+    "total_flos": 5.96753761959936e+16,
+    "train_loss": 12.74369546508789,
+    "train_runtime": 3539.0306,
+    "train_samples_per_second": 18.084,
+    "train_steps_per_second": 0.283,
+    "eval_loss": 2.719089984893799,
+    "eval_runtime": 8.9073,
+    "eval_samples_per_second": 53.776,
+    "eval_steps_per_second": 3.368,
+    "perplexity": 15.166514206108856
+  }
+}
