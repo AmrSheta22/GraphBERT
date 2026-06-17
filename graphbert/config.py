@@ -65,9 +65,9 @@ class TrainingConfig:
     logging_steps: int = 25
     eval_steps: int = 100
     save_steps: int = 250
-    save_strategy: str = "no"
-    save_only_model: bool = True
-    save_total_limit: int = 3
+    save_strategy: str = "steps"
+    save_only_model: bool = False
+    save_total_limit: int = 1
     fp16: bool = True
     bf16: bool = False
     dataloader_num_workers: int = 2

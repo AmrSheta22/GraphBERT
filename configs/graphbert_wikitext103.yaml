@@ -39,9 +39,9 @@ training:
   logging_steps: 25
   eval_steps: 100
   save_steps: 250
-  save_strategy: "no"
-  save_only_model: true
-  save_total_limit: 3
+  save_strategy: steps
+  save_only_model: false
+  save_total_limit: 1
   fp16: true
   bf16: false
   dataloader_num_workers: 2

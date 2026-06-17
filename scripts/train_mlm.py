@@ -7,6 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from transformers import Trainer, TrainingArguments
+from transformers.trainer_utils import get_last_checkpoint
 
 from graphbert.data import build_mlm_collator, load_mlm_dataset, load_tokenizer, tokenize_and_group
 from graphbert.metrics import GraphStatsCallback, add_perplexity
@@ -86,8 +87,8 @@ def main() -> None:
     )
 
     if config.training.do_train:
-        train_result = trainer.train()
-        trainer.save_model()
+        last_checkpoint = get_last_checkpoint(config.output_dir)
+        train_result = trainer.train(resume_from_checkpoint=last_checkpoint)
         tokenizer.save_pretrained(config.output_dir)
         trainer.log_metrics("train", train_result.metrics)
         trainer.save_metrics("train", train_result.metrics)

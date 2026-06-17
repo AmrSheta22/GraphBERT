@@ -78,9 +78,10 @@ config["training"]["per_device_eval_batch_size"] = int(eval_batch_size)
 config["training"]["gradient_accumulation_steps"] = int(grad_accum_steps)
 config["training"]["fp16"] = fp16.lower() == "true"
 config["training"]["bf16"] = bf16.lower() == "true"
-config["training"]["overwrite_output_dir"] = True
-config["training"]["save_strategy"] = "no"
-config["training"]["save_only_model"] = True
+config["training"]["overwrite_output_dir"] = False
+config["training"]["save_strategy"] = "steps"
+config["training"]["save_only_model"] = False
+config["training"]["save_total_limit"] = 1
 
 graph = config["graph"]
 graph["num_replaced_layers"] = int(num_layers)
@@ -160,11 +161,6 @@ run_one() {
     return 0
   fi
 
-  if [[ -d "${run_dir}" ]]; then
-    echo "Removing incomplete previous output for ${run_id}: ${run_dir}"
-    rm -rf "${run_dir}"
-  fi
-  rm -f "${console_log}" "${config_path}"
   mkdir -p "${run_dir}"
   make_config "${run_id}" "${run_dir}" "${num_layers}" "${sparsification}" "${top_k}" "${threshold}" "${normalization}" "${self_loops}" "${config_path}"
 
@@ -203,8 +199,19 @@ for name in ("train_results.json", "eval_results.json", "all_results.json"):
         with path.open("r", encoding="utf-8") as handle:
             metrics.update(json.load(handle))
 
+checkpoints = sorted(run_dir.glob("checkpoint-*"))
+last_checkpoint = str(checkpoints[-1]) if checkpoints else None
+
 (run_dir / "FINISHED").write_text(
-    json.dumps({"run_id": run_id, "finished_at": time.time(), "metrics": metrics}, indent=2),
+    json.dumps(
+        {
+            "run_id": run_id,
+            "finished_at": time.time(),
+            "last_checkpoint": last_checkpoint,
+            "metrics": metrics,
+        },
+        indent=2,
+    ),
     encoding="utf-8",
 )
 
@@ -213,6 +220,7 @@ with summary_log.open("a", encoding="utf-8") as handle:
         "event": "finished",
         "run_id": run_id,
         "output_dir": str(run_dir),
+        "last_checkpoint": last_checkpoint,
         "metrics": metrics,
         "timestamp": time.time(),
     }, sort_keys=True) + "\n")
