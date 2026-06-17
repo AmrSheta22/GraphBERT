@@ -70,6 +70,7 @@ class TrainingConfig:
     save_total_limit: int = 1
     fp16: bool = True
     bf16: bool = False
+    gradient_checkpointing: bool = False
     dataloader_num_workers: int = 2
     report_to: str = "tensorboard"
     mlm_probability: float = 0.15

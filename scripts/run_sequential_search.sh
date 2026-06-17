@@ -22,6 +22,8 @@ GRAD_ACCUM_STEPS="${GRAD_ACCUM_STEPS:-4}"
 FP16="${FP16:-true}"
 BF16="${BF16:-false}"
 
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
+
 mkdir -p "${OUTPUT_ROOT}/generated_configs" "${OUTPUT_ROOT}/console_logs"
 
 json_escape() {
@@ -73,18 +75,30 @@ with Path(base_config).open("r", encoding="utf-8") as handle:
 
 config["output_dir"] = output_dir
 config["dataset"]["max_seq_length"] = int(max_seq_length)
-config["training"]["per_device_train_batch_size"] = int(train_batch_size)
-config["training"]["per_device_eval_batch_size"] = int(eval_batch_size)
-config["training"]["gradient_accumulation_steps"] = int(grad_accum_steps)
+num_layers_int = int(num_layers)
+train_batch_size_int = int(train_batch_size)
+eval_batch_size_int = int(eval_batch_size)
+grad_accum_steps_int = int(grad_accum_steps)
+memory_safe = num_layers_int >= 4
+if memory_safe:
+    reduction_factor = 4
+    train_batch_size_int = max(1, train_batch_size_int // reduction_factor)
+    eval_batch_size_int = max(1, eval_batch_size_int // reduction_factor)
+    grad_accum_steps_int = grad_accum_steps_int * reduction_factor
+
+config["training"]["per_device_train_batch_size"] = train_batch_size_int
+config["training"]["per_device_eval_batch_size"] = eval_batch_size_int
+config["training"]["gradient_accumulation_steps"] = grad_accum_steps_int
 config["training"]["fp16"] = fp16.lower() == "true"
 config["training"]["bf16"] = bf16.lower() == "true"
+config["training"]["gradient_checkpointing"] = memory_safe
 config["training"]["overwrite_output_dir"] = False
 config["training"]["save_strategy"] = "steps"
 config["training"]["save_only_model"] = False
 config["training"]["save_total_limit"] = 1
 
 graph = config["graph"]
-graph["num_replaced_layers"] = int(num_layers)
+graph["num_replaced_layers"] = num_layers_int
 graph["sparsification"] = sparsification
 graph["top_k"] = int(top_k)
 graph["threshold"] = float(threshold)

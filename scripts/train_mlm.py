@@ -40,6 +40,7 @@ def build_training_args(config) -> TrainingArguments:
         "save_total_limit": training.save_total_limit,
         "fp16": training.fp16,
         "bf16": training.bf16,
+        "gradient_checkpointing": training.gradient_checkpointing,
         "dataloader_num_workers": training.dataloader_num_workers,
         "report_to": training.report_to,
         "logging_strategy": "steps",

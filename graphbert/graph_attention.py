@@ -85,14 +85,11 @@ class GraphBertSelfAttention(BertSelfAttention):
             context_heads.size(-1),
         )
 
-        expanded_context = context_heads.unsqueeze(2).expand(
-            batch_size, num_heads, query_length, context_heads.size(2), head_dim
-        )
-        neighbor_states = torch.gather(
-            expanded_context,
-            dim=3,
-            index=indices.unsqueeze(-1).expand(batch_size, num_heads, query_length, k, head_dim),
-        )
+        flat_context = context_heads.reshape(batch_size * num_heads, query_length, head_dim)
+        flat_indices = indices.reshape(batch_size * num_heads, query_length, k)
+        batch_head_index = torch.arange(batch_size * num_heads, device=indices.device).view(-1, 1, 1)
+        neighbor_states = flat_context[batch_head_index, flat_indices]
+        neighbor_states = neighbor_states.view(batch_size, num_heads, query_length, k, head_dim)
 
         if self.graph_config.add_self_loops:
             self_indices = torch.arange(query_length, device=indices.device).view(1, 1, query_length, 1)

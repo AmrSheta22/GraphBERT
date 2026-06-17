@@ -44,6 +44,7 @@ training:
   save_total_limit: 1
   fp16: true
   bf16: false
+  gradient_checkpointing: false
   dataloader_num_workers: 2
   report_to: tensorboard
   mlm_probability: 0.15
