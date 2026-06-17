@@ -78,6 +78,9 @@ config["training"]["per_device_eval_batch_size"] = int(eval_batch_size)
 config["training"]["gradient_accumulation_steps"] = int(grad_accum_steps)
 config["training"]["fp16"] = fp16.lower() == "true"
 config["training"]["bf16"] = bf16.lower() == "true"
+config["training"]["overwrite_output_dir"] = True
+config["training"]["save_strategy"] = "no"
+config["training"]["save_only_model"] = True
 
 graph = config["graph"]
 graph["num_replaced_layers"] = int(num_layers)
@@ -157,6 +160,11 @@ run_one() {
     return 0
   fi
 
+  if [[ -d "${run_dir}" ]]; then
+    echo "Removing incomplete previous output for ${run_id}: ${run_dir}"
+    rm -rf "${run_dir}"
+  fi
+  rm -f "${console_log}" "${config_path}"
   mkdir -p "${run_dir}"
   make_config "${run_id}" "${run_dir}" "${num_layers}" "${sparsification}" "${top_k}" "${threshold}" "${normalization}" "${self_loops}" "${config_path}"
 

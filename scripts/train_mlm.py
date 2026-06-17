@@ -34,12 +34,13 @@ def build_training_args(config) -> TrainingArguments:
         "logging_steps": training.logging_steps,
         "eval_steps": training.eval_steps,
         "save_steps": training.save_steps,
+        "save_strategy": training.save_strategy,
+        "save_only_model": training.save_only_model,
         "save_total_limit": training.save_total_limit,
         "fp16": training.fp16,
         "bf16": training.bf16,
         "dataloader_num_workers": training.dataloader_num_workers,
         "report_to": training.report_to,
-        "save_strategy": "steps",
         "logging_strategy": "steps",
         "prediction_loss_only": True,
     }
@@ -90,7 +91,6 @@ def main() -> None:
         tokenizer.save_pretrained(config.output_dir)
         trainer.log_metrics("train", train_result.metrics)
         trainer.save_metrics("train", train_result.metrics)
-        trainer.save_state()
 
     if config.training.do_eval:
         metrics = trainer.evaluate()
