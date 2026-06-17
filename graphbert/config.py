@@ -13,7 +13,7 @@ class DatasetConfig:
     config_name: Optional[str] = "wikitext-103-raw-v1"
     text_column: str = "text"
     validation_split_percentage: int = 5
-    max_seq_length: int = 128
+    max_seq_length: int = 512
     preprocessing_num_workers: int = 4
     line_by_line: bool = False
 
@@ -51,9 +51,9 @@ class TrainingConfig:
     do_train: bool = True
     do_eval: bool = True
     overwrite_output_dir: bool = False
-    per_device_train_batch_size: int = 2
-    per_device_eval_batch_size: int = 2
-    gradient_accumulation_steps: int = 8
+    per_device_train_batch_size: int = 8
+    per_device_eval_batch_size: int = 8
+    gradient_accumulation_steps: int = 4
     learning_rate: float = 2e-5
     weight_decay: float = 0.01
     adam_beta1: float = 0.9
@@ -66,7 +66,7 @@ class TrainingConfig:
     eval_steps: int = 100
     save_steps: int = 250
     save_total_limit: int = 3
-    fp16: bool = False
+    fp16: bool = True
     bf16: bool = False
     dataloader_num_workers: int = 2
     report_to: str = "tensorboard"

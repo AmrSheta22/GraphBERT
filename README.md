@@ -66,6 +66,33 @@ python scripts/train_mlm.py \
 
 Set `num_replaced_layers: 0` for a vanilla BERT baseline. Avoid replacing all layers unless you intentionally want an unstable ablation.
 
+## Greedy Experiment Search
+
+Run a baseline plus a stage-wise greedy search over replacement depth, sparsification, and normalization:
+
+```bash
+accelerate config
+python scripts/run_greedy_search.py \
+  --config configs/graphbert_wikitext103.yaml \
+  --output-root outputs/greedy-search \
+  --launcher accelerate \
+  --num-processes 2
+```
+
+The runner writes:
+
+- generated per-run configs: `outputs/greedy-search/generated_configs/`
+- full console logs: `outputs/greedy-search/console_logs/`
+- structured JSONL summary: `outputs/greedy-search/greedy_search.jsonl`
+
+The default search includes the `num_replaced_layers: 0` baseline, then greedily chooses the best setting by `eval_loss` across:
+
+- replacement layers: `1,2,4`
+- sparsification: dense, top-k, threshold
+- normalization: none, row normalization, symmetric normalization, with/without self-loops
+
+The base config now uses `max_seq_length: 512`, `per_device_train_batch_size: 8`, `per_device_eval_batch_size: 8`, `gradient_accumulation_steps: 4`, and `fp16: true`. Override these from the runner if your GPU memory needs a different tradeoff.
+
 ## Evaluation
 
 ```bash
