@@ -1,0 +1,20 @@
+{
+  "run_id": "baseline_bert_large",
+  "finished_at": 1781704360.753129,
+  "metrics": {
+    "epoch": 0.279935614808594,
+    "graph_avg_degree": 0.0,
+    "graph_sparsity": 0.0,
+    "graph_surviving_edge_pct": 100.0,
+    "total_flos": 5.96496063922176e+16,
+    "train_loss": 12.182875274658203,
+    "train_runtime": 3415.8743,
+    "train_samples_per_second": 18.736,
+    "train_steps_per_second": 0.293,
+    "eval_loss": 2.701516628265381,
+    "eval_runtime": 7.7667,
+    "eval_samples_per_second": 61.674,
+    "eval_steps_per_second": 3.863,
+    "perplexity": 14.90231586813414
+  }
+}
