@@ -1,0 +1,11 @@
+{
+    "epoch": 0.279935614808594,
+    "eval_loss": 2.7141878604888916,
+    "eval_runtime": 8.654,
+    "eval_samples_per_second": 55.35,
+    "eval_steps_per_second": 3.467,
+    "graph_avg_degree": 16.0,
+    "graph_sparsity": 0.96875,
+    "graph_surviving_edge_pct": 3.125,
+    "perplexity": 15.09234800118616
+}
