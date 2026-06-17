@@ -71,12 +71,11 @@ Set `num_replaced_layers: 0` for a vanilla BERT baseline. Avoid replacing all la
 Run a baseline plus a stage-wise greedy search over replacement depth, sparsification, and normalization:
 
 ```bash
-accelerate config
 python scripts/run_greedy_search.py \
   --config configs/graphbert_wikitext103.yaml \
   --output-root outputs/greedy-search \
   --launcher accelerate \
-  --num-processes 2
+  --accelerate-config configs/accelerate_2xt4.yaml
 ```
 
 The runner writes:

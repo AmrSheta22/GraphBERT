@@ -25,6 +25,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-root", default="outputs/greedy-search", help="Directory for all generated runs.")
     parser.add_argument("--log-file", default=None, help="JSONL summary log. Defaults under --output-root.")
     parser.add_argument("--launcher", choices=["python", "accelerate"], default="accelerate")
+    parser.add_argument("--accelerate-config", default=None, help="Path to an Accelerate YAML config file.")
     parser.add_argument("--num-processes", type=int, default=None, help="Passed to accelerate launch when set.")
     parser.add_argument("--dry-run", action="store_true", help="Write configs and log planned runs without training.")
     parser.add_argument("--skip-baseline", action="store_true", help="Do not run the num_replaced_layers=0 baseline.")
@@ -93,6 +94,8 @@ def write_yaml_config(spec: Dict[str, Any], path: Path) -> None:
 def build_command(config_path: Path, args: argparse.Namespace) -> List[str]:
     if args.launcher == "accelerate":
         command = ["accelerate", "launch"]
+        if args.accelerate_config is not None:
+            command.extend(["--config_file", args.accelerate_config])
         if args.num_processes is not None:
             command.extend(["--num_processes", str(args.num_processes)])
         command.extend(["scripts/train_mlm.py", "--config", str(config_path)])
