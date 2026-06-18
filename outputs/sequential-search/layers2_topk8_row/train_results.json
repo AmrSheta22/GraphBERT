@@ -1,0 +1,11 @@
+{
+    "epoch": 0.279935614808594,
+    "graph_avg_degree": 8.0,
+    "graph_sparsity": 0.984375,
+    "graph_surviving_edge_pct": 1.5625,
+    "total_flos": 5.96753761959936e+16,
+    "train_loss": 12.666089080810547,
+    "train_runtime": 3666.7349,
+    "train_samples_per_second": 17.454,
+    "train_steps_per_second": 0.273
+}
