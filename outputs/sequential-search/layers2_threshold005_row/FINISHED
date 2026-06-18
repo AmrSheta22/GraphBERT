@@ -1,0 +1,21 @@
+{
+  "run_id": "layers2_threshold005_row",
+  "finished_at": 1781787472.3042018,
+  "last_checkpoint": "outputs/sequential-search/layers2_threshold005_row/checkpoint-1000",
+  "metrics": {
+    "epoch": 0.279935614808594,
+    "graph_avg_degree": 25.191795349121094,
+    "graph_sparsity": 0.9507972747087479,
+    "graph_surviving_edge_pct": 4.920272529125214,
+    "total_flos": 5.96753761959936e+16,
+    "train_loss": 12.706804321289063,
+    "train_runtime": 3598.307,
+    "train_samples_per_second": 17.786,
+    "train_steps_per_second": 0.278,
+    "eval_loss": 2.7176623344421387,
+    "eval_runtime": 8.175,
+    "eval_samples_per_second": 58.593,
+    "eval_steps_per_second": 3.67,
+    "perplexity": 15.144877173986758
+  }
+}
