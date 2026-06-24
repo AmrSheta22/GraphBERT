@@ -20,6 +20,7 @@ def collect_graph_stats(model) -> Dict[str, float]:
             "graph_avg_degree": 0.0,
             "graph_edges": 0.0,
             "graph_valid_nodes": 0.0,
+            "graph_residual_scale": 0.0,
         }
 
     keys = stats[0].keys()

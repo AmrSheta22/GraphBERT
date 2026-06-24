@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -31,6 +32,8 @@ class GraphAttentionConfig:
     gcn_bias: bool = True
     gcn_activation: str = "gelu"
     gcn_dropout: float = 0.1
+    gcn_initial_scale: float = 0.0
+    gcn_gate_type: str = "scalar"
 
     def validate(self, num_hidden_layers: Optional[int] = None) -> None:
         if self.replacement_strategy not in {"final", "intermediate", "first", "uniform", "explicit"}:
@@ -57,6 +60,10 @@ class GraphAttentionConfig:
             raise ValueError("graph.gcn_activation must be none, gelu, relu, or silu")
         if not 0.0 <= self.gcn_dropout < 1.0:
             raise ValueError("graph.gcn_dropout must be in [0, 1)")
+        if self.gcn_gate_type not in {"scalar", "channel"}:
+            raise ValueError("graph.gcn_gate_type must be scalar or channel")
+        if not math.isfinite(self.gcn_initial_scale):
+            raise ValueError("graph.gcn_initial_scale must be finite")
         if self.renormalize_adjacency and self.symmetric_normalization:
             raise ValueError("Choose row or symmetric normalization, not both")
 

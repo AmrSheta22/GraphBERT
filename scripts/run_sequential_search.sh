@@ -65,14 +65,14 @@ run_one() {
   echo "Finished ${run_id}"
 }
 
-# run_id|num_replaced_layers|replacement_strategy|normalization|explicit_indices
+# run_id|num_gcn_adapter_layers|placement_strategy|normalization|explicit_indices
 RUNS=(
   "baseline_longformer|0|final|row|"
-  "final_2_gcn|2|final|row|"
-  "intermediate_2_gcn|2|intermediate|row|"
-  "uniform_3_gcn|3|uniform|row|"
-  "explicit_5_8_gcn|2|explicit|row|5,8"
-  "final_4_gcn_symmetric|4|final|symmetric|"
+  "final_2_residual_gcn|2|final|row|"
+  "intermediate_2_residual_gcn|2|intermediate|row|"
+  "uniform_3_residual_gcn|3|uniform|row|"
+  "explicit_5_8_residual_gcn|2|explicit|row|5,8"
+  "final_4_residual_gcn_symmetric|4|final|symmetric|"
 )
 
 for spec in "${RUNS[@]}"; do

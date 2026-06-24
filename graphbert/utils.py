@@ -17,7 +17,14 @@ def parse_config_args(description: str):
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--config", type=str, required=True, help="Path to a YAML experiment config.")
     parser.add_argument("--checkpoint", type=str, default=None, help="Checkpoint path for evaluation.")
-    parser.add_argument("--num-replaced-layers", type=int, default=None)
+    parser.add_argument(
+        "--num-gcn-layers",
+        "--num-replaced-layers",
+        dest="num_replaced_layers",
+        type=int,
+        default=None,
+        help="Number of intact Longformer layers to wrap with residual GCN adapters.",
+    )
     parser.add_argument(
         "--replacement-strategy",
         choices=["final", "intermediate", "first", "uniform", "explicit"],

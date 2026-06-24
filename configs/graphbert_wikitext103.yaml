@@ -13,8 +13,8 @@ dataset:
   global_attention_on_cls: true
 
 graph:
-  num_replaced_layers: 2
-  replacement_strategy: final  # final | intermediate | first | uniform | explicit
+  num_replaced_layers: 2        # legacy name: number of layers receiving GCN adapters
+  replacement_strategy: final  # adapter placement: final | intermediate | first | uniform | explicit
   layer_indices: []             # required when replacement_strategy is explicit
   renormalize_adjacency: true
   symmetric_normalization: false
@@ -23,6 +23,8 @@ graph:
   gcn_bias: true
   gcn_activation: gelu          # none | gelu | relu | silu
   gcn_dropout: 0.1
+  gcn_initial_scale: 0.0        # exact baseline equivalence at initialization
+  gcn_gate_type: scalar         # scalar | channel
 
 training:
   do_train: true

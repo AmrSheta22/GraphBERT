@@ -6,7 +6,6 @@ import torch
 from torch import nn
 from transformers.activations import ACT2FN
 from transformers.models.longformer.modeling_longformer import LongformerLayer
-from transformers.pytorch_utils import apply_chunking_to_forward
 
 from graphbert.config import GraphAttentionConfig
 
@@ -23,29 +22,31 @@ def _sliding_sum(values: torch.Tensor, radius: int) -> torch.Tensor:
 
 
 class GraphLongformerLayer(nn.Module):
-    """GCN block using Longformer's local-window and global-token topology."""
+    """Intact Longformer layer with a gated sparse-GCN residual adapter.
+
+    The wrapped pretrained layer is always evaluated normally. Its output is
+    augmented with ``alpha * GCN(input)`` over the same local/global topology
+    used by Longformer. With alpha initialized to zero, the wrapper is exactly
+    equivalent to the original layer at initialization.
+    """
 
     def __init__(
         self,
-        source: LongformerLayer,
+        base_layer: LongformerLayer,
         hidden_size: int,
         attention_window: int,
         graph_config: GraphAttentionConfig,
     ):
         super().__init__()
+        self.base_layer = base_layer
         self.graph_config = graph_config
         self.attention_window = attention_window
         self.one_sided_window = attention_window // 2
         self.gcn = nn.Linear(hidden_size, hidden_size, bias=graph_config.gcn_bias)
         self.gcn_dropout = nn.Dropout(graph_config.gcn_dropout)
         self.activation = ACT2FN[graph_config.gcn_activation] if graph_config.gcn_activation != "none" else None
-
-        # Keep the pretrained residual/normalization and feed-forward modules.
-        self.attention_output = source.attention.output
-        self.intermediate = source.intermediate
-        self.output = source.output
-        self.chunk_size_feed_forward = source.chunk_size_feed_forward
-        self.seq_len_dim = source.seq_len_dim
+        gate_shape = (hidden_size,) if graph_config.gcn_gate_type == "channel" else ()
+        self.gcn_gate = nn.Parameter(torch.full(gate_shape, graph_config.gcn_initial_scale))
         self.latest_graph_stats = {}
         self.reset_graph_parameters()
 
@@ -120,11 +121,8 @@ class GraphLongformerLayer(nn.Module):
             "graph_avg_degree": edges / valid_nodes.clamp_min(1),
             "graph_edges": edges,
             "graph_valid_nodes": valid_nodes,
+            "graph_residual_scale": self.gcn_gate.detach().abs().mean(),
         }
-
-    def ff_chunk(self, attention_output: torch.Tensor) -> torch.Tensor:
-        intermediate_output = self.intermediate(attention_output)
-        return self.output(intermediate_output, attention_output)
 
     def forward(
         self,
@@ -136,9 +134,16 @@ class GraphLongformerLayer(nn.Module):
         output_attentions: bool = False,
         **kwargs,
     ):
-        del attention_mask, is_global_attn, kwargs
-        if output_attentions:
-            raise ValueError("GraphLongformerLayer does not expose learned attention weights.")
+        base_outputs = self.base_layer(
+            hidden_states,
+            attention_mask=attention_mask,
+            is_index_masked=is_index_masked,
+            is_index_global_attn=is_index_global_attn,
+            is_global_attn=is_global_attn,
+            output_attentions=output_attentions,
+            **kwargs,
+        )
+
         batch_size, sequence_length = hidden_states.shape[:2]
         if is_index_masked is None:
             valid = torch.ones((batch_size, sequence_length), dtype=torch.bool, device=hidden_states.device)
@@ -154,12 +159,6 @@ class GraphLongformerLayer(nn.Module):
         if self.activation is not None:
             graph_output = self.activation(graph_output)
         graph_output = self.gcn_dropout(graph_output)
-        attention_output = self.attention_output(graph_output, hidden_states)
-        layer_output = apply_chunking_to_forward(
-            self.ff_chunk,
-            self.chunk_size_feed_forward,
-            self.seq_len_dim,
-            attention_output,
-        )
-
-        return (layer_output,)
+        graph_output = graph_output * valid.unsqueeze(-1)
+        adapted_output = base_outputs[0] + self.gcn_gate * graph_output
+        return (adapted_output,) + base_outputs[1:]

@@ -1,21 +1,21 @@
 # Longformer-GCN Sparse Context Prototype
 
-Research prototype for testing whether graph convolution over Longformer's sparse attention topology improves masked language modeling on long sequences.
+Research prototype for testing whether residual graph convolution over Longformer's sparse attention topology improves masked language modeling on long sequences.
 
-The base model is Hugging Face `allenai/longformer-base-4096`. Standard Longformer layers use sliding-window self-attention, with optional global-attention tokens, so the model never constructs dense all-token attention. Configured encoder layers are replaced by GCN blocks:
+The base model is Hugging Face `allenai/longformer-base-4096`. Standard Longformer layers use sliding-window self-attention, with optional global-attention tokens, so the model never constructs dense all-token attention. Configured encoder layers keep their complete pretrained computation and receive a gated GCN residual adapter:
 
 ```text
 Longformer encoder
   -> local sliding-window attention layers
-  -> selected GCN replacement layers
+  -> selected Longformer layers with residual GCN adapters
+       baseline = pretrained LongformerLayer(H)
        adjacency = Longformer local-window edges + global-token edges
-       aggregation = normalized neighborhood sum
-       projection = trainable GCN linear layer
-       output = pretrained residual/layer norm + pretrained FFN
+       graph = GCN(H, adjacency)
+       output = baseline + alpha * graph
   -> masked-language-modeling head
 ```
 
-The GCN path does not materialize an `n x n` adjacency matrix. Local aggregation uses cumulative sliding sums, and global-token aggregation uses reductions over the sequence. This preserves the sparse long-context objective.
+Each adapter's learnable `alpha` starts at exactly zero. The initial model is therefore bit-for-bit equivalent to the pretrained Longformer baseline, and training can introduce graph aggregation only when it is useful. The GCN path does not materialize an `n x n` adjacency matrix.
 
 ## Project layout
 
@@ -45,7 +45,7 @@ python scripts/download_assets.py --config configs/graphbert_wikitext103.yaml
 
 ## Training
 
-The default experiment uses 4096-token WikiText-103 blocks, one global CLS token, and replaces the final two Longformer layers.
+The default experiment uses 4096-token WikiText-103 blocks, one global CLS token, and adds zero-gated GCN adapters to the final two Longformer layers.
 
 ```bash
 accelerate launch scripts/train_mlm.py \
@@ -55,13 +55,13 @@ accelerate launch scripts/train_mlm.py \
 Useful overrides:
 
 ```bash
-# Replace the final four layers
+# Add adapters to the final four layers
 python scripts/train_mlm.py \
   --config configs/graphbert_wikitext103.yaml \
-  --num-replaced-layers 4 \
+  --num-gcn-layers 4 \
   --replacement-strategy final
 
-# Replace two intermediate layers explicitly (zero-based indices)
+# Adapt two intermediate layers explicitly (zero-based indices)
 python scripts/train_mlm.py \
   --config configs/graphbert_wikitext103.yaml \
   --layer-indices 5 8
@@ -73,14 +73,14 @@ python scripts/train_mlm.py \
   --replacement-strategy uniform
 ```
 
-Set `num_replaced_layers: 0` for the vanilla Longformer baseline.
+Set `num_replaced_layers: 0` for the vanilla Longformer baseline. The field name is retained for configuration compatibility; it now means the number of layers receiving adapters.
 
 ## Layer placement
 
-- `final`: replace the last `num_replaced_layers` blocks.
-- `intermediate`: replace a centered contiguous group of blocks.
-- `first`: replace the first blocks.
-- `uniform`: distribute replacements across encoder depth; one replacement selects the middle layer.
+- `final`: adapt the last `num_replaced_layers` blocks.
+- `intermediate`: adapt a centered contiguous group of blocks.
+- `first`: adapt the first blocks.
+- `uniform`: distribute adapters across encoder depth; one adapter selects the middle layer.
 - `explicit`: use the zero-based `layer_indices` list. Its length must match `num_replaced_layers`.
 
 ## Sparse graph behavior
@@ -103,7 +103,7 @@ python scripts/evaluate_mlm.py \
   --checkpoint outputs/longformer-gcn-wikitext103/checkpoint-1000
 ```
 
-Evaluation reports MLM loss, perplexity, average graph degree, edge count, and valid-node count for replaced layers.
+Evaluation reports MLM loss, perplexity, average graph degree, edge count, valid-node count, and learned residual scale.
 
 ## Sequential experiment search
 
@@ -111,15 +111,16 @@ Evaluation reports MLM loss, perplexity, average graph degree, edge count, and v
 bash scripts/run_sequential_search.sh
 ```
 
-The search compares a vanilla Longformer baseline with final, uniformly distributed, and explicitly placed GCN replacements. At 4096 tokens, start with batch size 1 and gradient accumulation; tune those values for your hardware.
+The search compares a vanilla Longformer baseline with final, intermediate, uniformly distributed, and explicitly placed residual GCN adapters. All adapted runs begin at the same function as the baseline.
 
 ## Implementation notes
 
-- Replacement happens after `LongformerForMaskedLM.from_pretrained(...)`.
-- A replacement removes that block's learned self-attention, but reuses its pretrained attention-output residual/layer norm and feed-forward modules.
-- The GCN projection is initialized to identity by default so initial behavior begins as normalized neighborhood smoothing followed by the pretrained remainder of the block.
-- Non-replaced layers retain native Longformer local and global attention.
-- Replaced layers use Longformer's graph topology, not its learned attention probabilities.
+- Adapter installation happens after `LongformerForMaskedLM.from_pretrained(...)`.
+- Every adapted block retains its pretrained attention, residuals, layer norms, and feed-forward modules unchanged.
+- The GCN projection is initialized to identity and its residual gate is initialized to zero by default.
+- At initialization, adapted and baseline models produce exactly identical outputs.
+- The scalar gate receives gradients immediately; GCN weights begin learning once the gate moves away from zero.
+- Adapters use Longformer's graph topology, not its learned attention probabilities.
 ## Long-context retrieval evaluation (MLDR)
 
 This repository includes an English MLDR evaluation modeled on ModernBERT Section 3.1.3. MLDR contains 10,000 English training queries, 800 test queries, and a 200,000-document corpus. Results are reported as nDCG@10; Recall@100 is also written as a diagnostic.

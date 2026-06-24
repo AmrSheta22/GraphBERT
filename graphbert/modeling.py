@@ -11,7 +11,7 @@ from graphbert.config import GraphAttentionConfig
 from graphbert.graph_attention import GraphLongformerLayer
 
 
-def replacement_layer_indices(num_layers: int, graph_config: GraphAttentionConfig) -> List[int]:
+def selected_layer_indices(num_layers: int, graph_config: GraphAttentionConfig) -> List[int]:
     graph_config.validate(num_hidden_layers=num_layers)
     count = graph_config.num_replaced_layers
     if count == 0:
@@ -34,12 +34,12 @@ def replacement_layer_indices(num_layers: int, graph_config: GraphAttentionConfi
     raise ValueError(f"Unknown replacement strategy: {strategy}")
 
 
-def replace_longformer_layers(
+def add_longformer_gcn_adapters(
     model: LongformerForMaskedLM,
     graph_config: GraphAttentionConfig,
 ) -> List[int]:
     layers = model.longformer.encoder.layer
-    indices = replacement_layer_indices(len(layers), graph_config)
+    indices = selected_layer_indices(len(layers), graph_config)
     for idx in indices:
         layers[idx] = GraphLongformerLayer.from_longformer_layer(
             layers[idx],
@@ -49,7 +49,13 @@ def replace_longformer_layers(
         )
     model.config.graphbert = dict(graph_config.__dict__)
     model.config.graphbert_replaced_layers = indices
+    model.config.graphbert_adapted_layers = indices
     return indices
+
+
+# Compatibility aliases for existing scripts and saved experiment code.
+replacement_layer_indices = selected_layer_indices
+replace_longformer_layers = add_longformer_gcn_adapters
 
 
 def iter_graph_attention_modules(model) -> Iterable[GraphLongformerLayer]:
@@ -70,7 +76,7 @@ def build_graph_bert_for_mlm(
         )
     graph_config.validate(num_hidden_layers=config.num_hidden_layers)
     model = LongformerForMaskedLM.from_pretrained(model_name_or_path, config=config)
-    replace_longformer_layers(model, graph_config)
+    add_longformer_gcn_adapters(model, graph_config)
     return model
 
 
@@ -78,11 +84,11 @@ def load_graph_bert_checkpoint(
     checkpoint: str,
     graph_config: GraphAttentionConfig,
 ) -> LongformerForMaskedLM:
-    """Load a saved checkpoint after recreating its GCN replacement blocks."""
-    model = LongformerForMaskedLM.from_pretrained(checkpoint)
-    replace_longformer_layers(model, graph_config)
-
+    """Load a saved checkpoint after recreating its GCN residual adapters."""
     checkpoint_path = Path(checkpoint)
+    config = AutoConfig.from_pretrained(checkpoint)
+    if config.model_type != "longformer":
+        raise ValueError(f"Expected a Longformer checkpoint, got model_type={config.model_type!r}.")
     safetensors_path = checkpoint_path / "model.safetensors"
     pytorch_path = checkpoint_path / "pytorch_model.bin"
     if safetensors_path.exists():
@@ -92,5 +98,26 @@ def load_graph_bert_checkpoint(
     else:
         raise FileNotFoundError(f"No model.safetensors or pytorch_model.bin found in {checkpoint}")
 
-    model.load_state_dict(state_dict, strict=False)
+    has_residual_adapters = any(".base_layer." in key or key.endswith(".gcn_gate") for key in state_dict)
+    has_legacy_replacements = any(".gcn." in key for key in state_dict) and not has_residual_adapters
+    if has_legacy_replacements:
+        raise RuntimeError(
+            "This checkpoint uses the retired destructive GCN replacement architecture. "
+            "Start a new run from its original Longformer base checkpoint to use residual adapters."
+        )
+
+    model = LongformerForMaskedLM(config)
+    if has_residual_adapters:
+        add_longformer_gcn_adapters(model, graph_config)
+    missing, unexpected = model.load_state_dict(state_dict, strict=False)
+    allowed_missing = {"lm_head.decoder.weight", "lm_head.decoder.bias"}
+    missing = [key for key in missing if key not in allowed_missing]
+    if missing or unexpected:
+        raise RuntimeError(
+            "Checkpoint architecture does not match the configured residual GCN model. "
+            f"Missing keys: {missing}; unexpected keys: {unexpected}"
+        )
+    model.tie_weights()
+    if not has_residual_adapters:
+        add_longformer_gcn_adapters(model, graph_config)
     return model
