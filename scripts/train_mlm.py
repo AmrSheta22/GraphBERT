@@ -64,7 +64,7 @@ def build_trainer(**kwargs) -> Trainer:
 
 
 def main() -> None:
-    args = parse_config_args("Train GraphBERT on masked language modeling.")
+    args = parse_config_args("Train Longformer-GCN on masked language modeling.")
     config = load_config_with_overrides(args)
     prepare_reproducibility(config.seed)
     save_experiment_config(config, config.output_dir)
@@ -72,7 +72,7 @@ def main() -> None:
     tokenizer = load_tokenizer(config.model_name_or_path)
     raw_datasets = load_mlm_dataset(config.dataset)
     tokenized = tokenize_and_group(raw_datasets, tokenizer, config.dataset)
-    collator = build_mlm_collator(tokenizer, config.training.mlm_probability)
+    collator = build_mlm_collator(tokenizer, config.training.mlm_probability, config.dataset.global_attention_on_cls)
 
     model = build_graph_bert_for_mlm(config.model_name_or_path, config.graph)
     training_args = build_training_args(config)

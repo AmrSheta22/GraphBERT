@@ -1,4 +1,4 @@
-"""GraphBERT attention-GCN research prototype."""
+"""Sparse Longformer-GCN research prototype."""
 
 from graphbert.config import ExperimentConfig, GraphAttentionConfig
 from graphbert.modeling import build_graph_bert_for_mlm

@@ -5,30 +5,46 @@ from typing import Iterable, List
 
 import torch
 from safetensors.torch import load_file as load_safetensors
-from transformers import AutoConfig, BertForMaskedLM
+from transformers import AutoConfig, LongformerForMaskedLM
 
 from graphbert.config import GraphAttentionConfig
-from graphbert.graph_attention import GraphBertSelfAttention
+from graphbert.graph_attention import GraphLongformerLayer
 
 
 def replacement_layer_indices(num_layers: int, graph_config: GraphAttentionConfig) -> List[int]:
     graph_config.validate(num_hidden_layers=num_layers)
-    n = graph_config.num_replaced_layers
-    if n == 0:
+    count = graph_config.num_replaced_layers
+    if count == 0:
         return []
-    if graph_config.replace_final_layers:
-        return list(range(num_layers - n, num_layers))
-    return list(range(n))
+
+    strategy = graph_config.replacement_strategy
+    if strategy == "final":
+        return list(range(num_layers - count, num_layers))
+    if strategy == "intermediate":
+        start = (num_layers - count) // 2
+        return list(range(start, start + count))
+    if strategy == "first":
+        return list(range(count))
+    if strategy == "uniform":
+        if count == 1:
+            return [num_layers // 2]
+        return [round(i * (num_layers - 1) / (count - 1)) for i in range(count)]
+    if strategy == "explicit":
+        return sorted(graph_config.layer_indices)
+    raise ValueError(f"Unknown replacement strategy: {strategy}")
 
 
-def replace_bert_attention_layers(model: BertForMaskedLM, graph_config: GraphAttentionConfig) -> List[int]:
-    layers = model.bert.encoder.layer
+def replace_longformer_layers(
+    model: LongformerForMaskedLM,
+    graph_config: GraphAttentionConfig,
+) -> List[int]:
+    layers = model.longformer.encoder.layer
     indices = replacement_layer_indices(len(layers), graph_config)
     for idx in indices:
-        bert_self_attention = layers[idx].attention.self
-        layers[idx].attention.self = GraphBertSelfAttention.from_bert_self_attention(
-            bert_self_attention,
+        layers[idx] = GraphLongformerLayer.from_longformer_layer(
+            layers[idx],
             model.config,
+            idx,
             graph_config,
         )
     model.config.graphbert = dict(graph_config.__dict__)
@@ -36,24 +52,35 @@ def replace_bert_attention_layers(model: BertForMaskedLM, graph_config: GraphAtt
     return indices
 
 
-def iter_graph_attention_modules(model) -> Iterable[GraphBertSelfAttention]:
+def iter_graph_attention_modules(model) -> Iterable[GraphLongformerLayer]:
     for module in model.modules():
-        if isinstance(module, GraphBertSelfAttention):
+        if isinstance(module, GraphLongformerLayer):
             yield module
 
 
-def build_graph_bert_for_mlm(model_name_or_path: str, graph_config: GraphAttentionConfig) -> BertForMaskedLM:
+def build_graph_bert_for_mlm(
+    model_name_or_path: str,
+    graph_config: GraphAttentionConfig,
+) -> LongformerForMaskedLM:
     config = AutoConfig.from_pretrained(model_name_or_path)
+    if config.model_type != "longformer":
+        raise ValueError(
+            f"Expected a Longformer checkpoint, got model_type={config.model_type!r} "
+            f"from {model_name_or_path!r}."
+        )
     graph_config.validate(num_hidden_layers=config.num_hidden_layers)
-    model = BertForMaskedLM.from_pretrained(model_name_or_path, config=config)
-    replace_bert_attention_layers(model, graph_config)
+    model = LongformerForMaskedLM.from_pretrained(model_name_or_path, config=config)
+    replace_longformer_layers(model, graph_config)
     return model
 
 
-def load_graph_bert_checkpoint(checkpoint: str, graph_config: GraphAttentionConfig) -> BertForMaskedLM:
-    """Load a saved GraphBERT checkpoint after recreating swapped attention modules."""
-    model = BertForMaskedLM.from_pretrained(checkpoint)
-    replace_bert_attention_layers(model, graph_config)
+def load_graph_bert_checkpoint(
+    checkpoint: str,
+    graph_config: GraphAttentionConfig,
+) -> LongformerForMaskedLM:
+    """Load a saved checkpoint after recreating its GCN replacement blocks."""
+    model = LongformerForMaskedLM.from_pretrained(checkpoint)
+    replace_longformer_layers(model, graph_config)
 
     checkpoint_path = Path(checkpoint)
     safetensors_path = checkpoint_path / "model.safetensors"

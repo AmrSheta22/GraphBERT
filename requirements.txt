@@ -10,3 +10,4 @@ networkx>=3.0
 evaluate>=0.4
 safetensors>=0.4
 tensorboard>=2.14
+# Optional for scalable ColBERT/PLAID evaluation: pylate>=1.6

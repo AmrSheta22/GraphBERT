@@ -3,6 +3,7 @@ from __future__ import annotations
 from itertools import chain
 from typing import Dict
 
+import torch
 from datasets import DatasetDict, load_dataset
 from transformers import AutoTokenizer, DataCollatorForLanguageModeling
 
@@ -53,11 +54,10 @@ def tokenize_and_group(raw_datasets: DatasetDict, tokenizer, dataset_config: Dat
         concatenated = {key: list(chain(*examples[key])) for key in examples.keys()}
         total_length = len(concatenated["input_ids"])
         total_length = (total_length // max_seq_length) * max_seq_length
-        result = {
+        return {
             key: [values[i : i + max_seq_length] for i in range(0, total_length, max_seq_length)]
             for key, values in concatenated.items()
         }
-        return result
 
     return tokenized.map(
         group_texts,
@@ -67,9 +67,24 @@ def tokenize_and_group(raw_datasets: DatasetDict, tokenizer, dataset_config: Dat
     )
 
 
-def build_mlm_collator(tokenizer, mlm_probability: float):
-    return DataCollatorForLanguageModeling(
+class LongformerMLMCollator(DataCollatorForLanguageModeling):
+    def __init__(self, *args, global_attention_on_cls: bool = True, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.global_attention_on_cls = global_attention_on_cls
+
+    def torch_call(self, examples):
+        batch = super().torch_call(examples)
+        if self.global_attention_on_cls:
+            global_attention_mask = torch.zeros_like(batch["attention_mask"])
+            global_attention_mask[:, 0] = 1
+            batch["global_attention_mask"] = global_attention_mask
+        return batch
+
+
+def build_mlm_collator(tokenizer, mlm_probability: float, global_attention_on_cls: bool = True):
+    return LongformerMLMCollator(
         tokenizer=tokenizer,
         mlm=True,
         mlm_probability=mlm_probability,
+        global_attention_on_cls=global_attention_on_cls,
     )

@@ -12,7 +12,7 @@ from graphbert.utils import load_config_with_overrides, parse_config_args
 
 
 def main() -> None:
-    args = parse_config_args("Download the base BERT checkpoint, tokenizer, and MLM dataset cache.")
+    args = parse_config_args("Download the base Longformer checkpoint, tokenizer, and MLM dataset cache.")
     config = load_config_with_overrides(args)
 
     AutoConfig.from_pretrained(config.model_name_or_path)

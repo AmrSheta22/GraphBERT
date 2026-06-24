@@ -18,9 +18,12 @@ def parse_config_args(description: str):
     parser.add_argument("--config", type=str, required=True, help="Path to a YAML experiment config.")
     parser.add_argument("--checkpoint", type=str, default=None, help="Checkpoint path for evaluation.")
     parser.add_argument("--num-replaced-layers", type=int, default=None)
-    parser.add_argument("--sparsification", choices=["dense", "threshold", "topk"], default=None)
-    parser.add_argument("--threshold", type=float, default=None)
-    parser.add_argument("--top-k", type=int, default=None)
+    parser.add_argument(
+        "--replacement-strategy",
+        choices=["final", "intermediate", "first", "uniform", "explicit"],
+        default=None,
+    )
+    parser.add_argument("--layer-indices", type=int, nargs="+", default=None)
     return parser.parse_args()
 
 
@@ -28,12 +31,12 @@ def load_config_with_overrides(args) -> ExperimentConfig:
     config = load_experiment_config(args.config)
     if args.num_replaced_layers is not None:
         config.graph.num_replaced_layers = args.num_replaced_layers
-    if args.sparsification is not None:
-        config.graph.sparsification = args.sparsification
-    if args.threshold is not None:
-        config.graph.threshold = args.threshold
-    if args.top_k is not None:
-        config.graph.top_k = args.top_k
+    if args.replacement_strategy is not None:
+        config.graph.replacement_strategy = args.replacement_strategy
+    if args.layer_indices is not None:
+        config.graph.layer_indices = args.layer_indices
+        config.graph.replacement_strategy = "explicit"
+        config.graph.num_replaced_layers = len(args.layer_indices)
     return config
 
 

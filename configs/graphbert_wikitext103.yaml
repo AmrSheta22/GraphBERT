@@ -1,5 +1,5 @@
-model_name_or_path: bert-large-uncased
-output_dir: outputs/graphbert-wikitext103
+model_name_or_path: allenai/longformer-base-4096
+output_dir: outputs/longformer-gcn-wikitext103
 seed: 1337
 
 dataset:
@@ -7,28 +7,30 @@ dataset:
   config_name: wikitext-103-raw-v1
   text_column: text
   validation_split_percentage: 5
-  max_seq_length: 512
+  max_seq_length: 4096
   preprocessing_num_workers: 4
   line_by_line: false
+  global_attention_on_cls: true
 
 graph:
   num_replaced_layers: 2
-  replace_final_layers: true
-  sparsification: topk       # dense | threshold | topk
-  threshold: 0.01
-  top_k: 16
+  replacement_strategy: final  # final | intermediate | first | uniform | explicit
+  layer_indices: []             # required when replacement_strategy is explicit
   renormalize_adjacency: true
   symmetric_normalization: false
-  add_self_loops: false
-  gcn_weight_init: identity
+  add_self_loops: true
+  gcn_weight_init: identity     # identity | xavier
+  gcn_bias: true
+  gcn_activation: gelu          # none | gelu | relu | silu
+  gcn_dropout: 0.1
 
 training:
   do_train: true
   do_eval: true
   overwrite_output_dir: false
-  per_device_train_batch_size: 8
-  per_device_eval_batch_size: 8
-  gradient_accumulation_steps: 4
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 1
+  gradient_accumulation_steps: 16
   learning_rate: 2.0e-5
   weight_decay: 0.01
   adam_beta1: 0.9
@@ -44,7 +46,7 @@ training:
   save_total_limit: 1
   fp16: true
   bf16: false
-  gradient_checkpointing: false
+  gradient_checkpointing: true
   dataloader_num_workers: 2
   report_to: tensorboard
   mlm_probability: 0.15

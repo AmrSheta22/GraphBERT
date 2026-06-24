@@ -13,7 +13,7 @@ from scripts.train_mlm import build_trainer
 
 
 def main() -> None:
-    args = parse_config_args("Evaluate a GraphBERT MLM checkpoint.")
+    args = parse_config_args("Evaluate a Longformer-GCN MLM checkpoint.")
     if args.checkpoint is None:
         raise ValueError("--checkpoint is required for evaluation")
 
@@ -23,7 +23,7 @@ def main() -> None:
     tokenizer = load_tokenizer(args.checkpoint)
     raw_datasets = load_mlm_dataset(config.dataset)
     tokenized = tokenize_and_group(raw_datasets, tokenizer, config.dataset)
-    collator = build_mlm_collator(tokenizer, config.training.mlm_probability)
+    collator = build_mlm_collator(tokenizer, config.training.mlm_probability, config.dataset.global_attention_on_cls)
 
     model = load_graph_bert_checkpoint(args.checkpoint, config.graph)
 

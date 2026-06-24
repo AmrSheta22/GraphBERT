@@ -17,13 +17,17 @@ def collect_graph_stats(model) -> Dict[str, float]:
 
     if not stats:
         return {
-            "graph_sparsity": 0.0,
             "graph_avg_degree": 0.0,
-            "graph_surviving_edge_pct": 100.0,
+            "graph_edges": 0.0,
+            "graph_valid_nodes": 0.0,
         }
 
     keys = stats[0].keys()
-    return {key: sum(item[key] for item in stats) / len(stats) for key in keys}
+    averaged = {key: sum(item[key] for item in stats) / len(stats) for key in keys}
+    return {
+        key: float(value.detach().cpu()) if hasattr(value, "detach") else float(value)
+        for key, value in averaged.items()
+    }
 
 
 def add_perplexity(metrics: Dict[str, float], loss_key: str = "eval_loss") -> Dict[str, float]:
