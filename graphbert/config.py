@@ -22,7 +22,7 @@ class DatasetConfig:
 
 @dataclass
 class GraphAttentionConfig:
-    num_replaced_layers: int = 0
+    num_replaced_layers: int = 0 # shouldn't be replaced anymore
     replacement_strategy: str = "final"
     layer_indices: List[int] = field(default_factory=list)
     renormalize_adjacency: bool = True
