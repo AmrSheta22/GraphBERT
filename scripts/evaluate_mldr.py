@@ -104,7 +104,7 @@ def main():
         score_rows = top_scores.cpu().tolist()
         for query_id, docs, scores in zip(query_ids, rankings.values(), score_rows):
             for rank, (doc_id, score) in enumerate(zip(docs, scores), start=1):
-                handle.write(f"{query_id} Q0 {doc_id} {rank} {score:.8f} longformer-gcn\n")
+                handle.write(f"{query_id} Q0 {doc_id} {rank} {score:.8f} longformer-appnp\n")
     print(json.dumps(metrics, indent=2))
 
 

@@ -1,21 +1,22 @@
-# Longformer-GCN Sparse Context Prototype
+# Longformer-APPNP Sparse Context Prototype
 
-Research prototype for testing whether residual graph convolution over Longformer's sparse attention topology improves masked language modeling on long sequences.
+Research prototype for testing whether residual APPNP propagation over Longformer's sparse attention topology improves masked language modeling on long sequences.
 
-The base model is Hugging Face `allenai/longformer-base-4096`. Standard Longformer layers use sliding-window self-attention, with optional global-attention tokens, so the model never constructs dense all-token attention. Configured encoder layers keep their complete pretrained computation and receive a gated GCN residual adapter:
+The base model is Hugging Face `allenai/longformer-base-4096`. Configured encoder layers keep their complete pretrained computation and receive a gated APPNP residual adapter:
 
 ```text
 Longformer encoder
   -> local sliding-window attention layers
-  -> selected Longformer layers with residual GCN adapters
+  -> selected Longformer layers with residual APPNP adapters
        baseline = pretrained LongformerLayer(H)
        adjacency = Longformer local-window edges + global-token edges
-       graph = GCN(H, adjacency)
-       output = baseline + alpha * graph
+       Z0 = projection(H)
+       Z(k+1) = (1 - beta) A_hat Z(k) + beta Z0
+       output = baseline + alpha * Z(K)
   -> masked-language-modeling head
 ```
 
-Each adapter's learnable `alpha` starts at exactly zero. The initial model is therefore bit-for-bit equivalent to the pretrained Longformer baseline, and training can introduce graph aggregation only when it is useful. The GCN path does not materialize an `n x n` adjacency matrix.
+Each adapter's learnable `alpha` starts at exactly zero, so the initial model is bit-for-bit equivalent to the pretrained baseline. APPNP performs repeated shared-weight propagation while teleporting back to `Z0`, extending receptive field without stacking separate GCN weights. No `n x n` adjacency matrix is materialized.
 
 ## Project layout
 
@@ -45,7 +46,7 @@ python scripts/download_assets.py --config configs/graphbert_wikitext103.yaml
 
 ## Training
 
-The default experiment uses 4096-token WikiText-103 blocks, one global CLS token, and adds zero-gated GCN adapters to the final two Longformer layers.
+The default experiment uses 4096-token WikiText-103 blocks, one global CLS token, and adds zero-gated APPNP adapters with `K=8` to the final two Longformer layers.
 
 ```bash
 accelerate launch scripts/train_mlm.py \
@@ -55,18 +56,19 @@ accelerate launch scripts/train_mlm.py \
 Useful overrides:
 
 ```bash
-# Add adapters to the final four layers
+# Add APPNP adapters to the final four layers
 python scripts/train_mlm.py \
   --config configs/graphbert_wikitext103.yaml \
-  --num-gcn-layers 4 \
-  --replacement-strategy final
+  --num-appnp-layers 4 \
+  --replacement-strategy final \
+  --appnp-steps 16
 
 # Adapt two intermediate layers explicitly (zero-based indices)
 python scripts/train_mlm.py \
   --config configs/graphbert_wikitext103.yaml \
   --layer-indices 5 8
 
-# Spread three GCN blocks through the encoder
+# Spread three APPNP adapters through the encoder
 python scripts/train_mlm.py \
   --config configs/graphbert_wikitext103.yaml \
   --num-replaced-layers 3 \
@@ -91,7 +93,9 @@ For a configured Longformer attention window of width `w`:
 - global-attention tokens aggregate every non-padding token;
 - ordinary tokens also aggregate all global-attention tokens;
 - padding nodes neither send nor receive messages;
-- self edges, row normalization, symmetric normalization, activation, dropout, and GCN initialization are configurable.
+- self edges, row/symmetric normalization, APPNP depth `K`, teleport probability `beta`, activation, dropout, and projection initialization are configurable.
+
+The default uses symmetric normalization, `K=8`, and `beta=0.1`. The sequential runner compares `K=8` with `K=16` using the same two final adapter locations.
 
 The default collator marks the first token (CLS) for global attention. Disable this with `dataset.global_attention_on_cls: false`.
 
@@ -100,10 +104,10 @@ The default collator marks the first token (CLS) for global attention. Disable t
 ```bash
 python scripts/evaluate_mlm.py \
   --config configs/graphbert_wikitext103.yaml \
-  --checkpoint outputs/longformer-gcn-wikitext103/checkpoint-1000
+  --checkpoint outputs/longformer-appnp-wikitext103/checkpoint-1000
 ```
 
-Evaluation reports MLM loss, perplexity, average graph degree, edge count, valid-node count, and learned residual scale.
+Evaluation reports MLM loss, perplexity, average graph degree, APPNP steps, edge count, valid-node count, and learned residual scale.
 
 ## Sequential experiment search
 
@@ -111,15 +115,23 @@ Evaluation reports MLM loss, perplexity, average graph degree, edge count, valid
 bash scripts/run_sequential_search.sh
 ```
 
-The search compares a vanilla Longformer baseline with final, intermediate, uniformly distributed, and explicitly placed residual GCN adapters. All adapted runs begin at the same function as the baseline.
+The sequential search runs a vanilla Longformer baseline plus two otherwise identical final-layer APPNP trials with `K=8` and `K=16`.
+
+The run directories are:
+
+- `outputs/sequential-search/baseline_longformer`
+- `outputs/sequential-search/final_2_appnp_k8`
+- `outputs/sequential-search/final_2_appnp_k16`
+
+APPNP cost grows linearly with `K`. The `K=16` trial performs twice as many sparse propagation passes as `K=8`, so it will be noticeably slower even though both retain linear memory in sequence length.
 
 ## Implementation notes
 
 - Adapter installation happens after `LongformerForMaskedLM.from_pretrained(...)`.
 - Every adapted block retains its pretrained attention, residuals, layer norms, and feed-forward modules unchanged.
-- The GCN projection is initialized to identity and its residual gate is initialized to zero by default.
+- The APPNP projection is initialized to identity and its residual gate is initialized to zero by default.
 - At initialization, adapted and baseline models produce exactly identical outputs.
-- The scalar gate receives gradients immediately; GCN weights begin learning once the gate moves away from zero.
+- The scalar gate receives gradients immediately; APPNP projection weights begin learning once the gate moves away from zero.
 - Adapters use Longformer's graph topology, not its learned attention probabilities.
 ## Long-context retrieval evaluation (MLDR)
 
@@ -142,7 +154,7 @@ Train on 1.25M MS MARCO examples with mined hard negatives, batch size 16, and 5
 ```bash
 python scripts/train_retrieval.py \
   --config configs/graphbert_wikitext103.yaml \
-  --source-model outputs/longformer-gcn-wikitext103/checkpoint-1000 \
+  --source-model outputs/longformer-appnp-wikitext103/checkpoint-1000 \
   --output-dir outputs/mldr/single-msmarco \
   --stage msmarco \
   --architecture single \
@@ -188,7 +200,7 @@ The ColBERT path follows the paper's 809k-query MS MARCO setup: 32 candidate doc
 ```bash
 python scripts/train_retrieval.py \
   --config configs/graphbert_wikitext103.yaml \
-  --source-model outputs/longformer-gcn-wikitext103/checkpoint-1000 \
+  --source-model outputs/longformer-appnp-wikitext103/checkpoint-1000 \
   --output-dir outputs/mldr/colbert-msmarco \
   --stage msmarco \
   --architecture colbert \
@@ -209,7 +221,7 @@ python scripts/evaluate_mldr_colbert.py \
 Run all three settings sequentially with:
 
 ```bash
-SOURCE_MODEL=outputs/longformer-gcn-wikitext103/checkpoint-1000 \
+SOURCE_MODEL=outputs/longformer-appnp-wikitext103/checkpoint-1000 \
 OUTPUT_ROOT=outputs/mldr \
 bash scripts/run_mldr_evaluation.sh
 ```

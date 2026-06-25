@@ -18,12 +18,13 @@ def parse_config_args(description: str):
     parser.add_argument("--config", type=str, required=True, help="Path to a YAML experiment config.")
     parser.add_argument("--checkpoint", type=str, default=None, help="Checkpoint path for evaluation.")
     parser.add_argument(
+        "--num-appnp-layers",
         "--num-gcn-layers",
         "--num-replaced-layers",
         dest="num_replaced_layers",
         type=int,
         default=None,
-        help="Number of intact Longformer layers to wrap with residual GCN adapters.",
+        help="Number of intact Longformer layers to wrap with residual APPNP adapters.",
     )
     parser.add_argument(
         "--replacement-strategy",
@@ -31,6 +32,8 @@ def parse_config_args(description: str):
         default=None,
     )
     parser.add_argument("--layer-indices", type=int, nargs="+", default=None)
+    parser.add_argument("--appnp-steps", type=int, default=None)
+    parser.add_argument("--appnp-teleport-probability", type=float, default=None)
     return parser.parse_args()
 
 
@@ -44,6 +47,10 @@ def load_config_with_overrides(args) -> ExperimentConfig:
         config.graph.layer_indices = args.layer_indices
         config.graph.replacement_strategy = "explicit"
         config.graph.num_replaced_layers = len(args.layer_indices)
+    if args.appnp_steps is not None:
+        config.graph.appnp_steps = args.appnp_steps
+    if args.appnp_teleport_probability is not None:
+        config.graph.appnp_teleport_probability = args.appnp_teleport_probability
     return config
 
 

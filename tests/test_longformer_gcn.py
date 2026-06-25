@@ -6,11 +6,11 @@ import torch
 from transformers import LongformerConfig, LongformerForMaskedLM
 
 from graphbert.config import GraphAttentionConfig
-from graphbert.graph_attention import GraphLongformerLayer
-from graphbert.modeling import add_longformer_gcn_adapters, load_graph_bert_checkpoint, selected_layer_indices
+from graphbert.graph_attention import APPNPLongformerLayer
+from graphbert.modeling import add_longformer_appnp_adapters, load_graph_bert_checkpoint, selected_layer_indices
 
 
-class LongformerGCNTests(unittest.TestCase):
+class LongformerAPPNPTests(unittest.TestCase):
     def tiny_model(self):
         config = LongformerConfig(
             vocab_size=101,
@@ -59,10 +59,11 @@ class LongformerGCNTests(unittest.TestCase):
         graph_config = GraphAttentionConfig(
             num_replaced_layers=2,
             replacement_strategy="uniform",
-            gcn_dropout=0.0,
+            appnp_dropout=0.0,
+            appnp_steps=2,
         )
-        self.assertEqual(add_longformer_gcn_adapters(model, graph_config), [0, 3])
-        self.assertIsInstance(model.longformer.encoder.layer[0], GraphLongformerLayer)
+        self.assertEqual(add_longformer_appnp_adapters(model, graph_config), [0, 3])
+        self.assertIsInstance(model.longformer.encoder.layer[0], APPNPLongformerLayer)
 
         input_ids = torch.randint(0, model.config.vocab_size, (2, 32))
         attention_mask = torch.ones_like(input_ids)
@@ -77,10 +78,10 @@ class LongformerGCNTests(unittest.TestCase):
         self.assertEqual(output.logits.shape, (2, 32, model.config.vocab_size))
         output.loss.backward()
         adapter = model.longformer.encoder.layer[0]
-        self.assertIsNotNone(adapter.gcn.weight.grad)
-        self.assertEqual(adapter.gcn.weight.grad.abs().sum().item(), 0.0)
-        self.assertIsNotNone(adapter.gcn_gate.grad)
-        self.assertGreater(adapter.gcn_gate.grad.abs().item(), 0.0)
+        self.assertIsNotNone(adapter.appnp_projection.weight.grad)
+        self.assertEqual(adapter.appnp_projection.weight.grad.abs().sum().item(), 0.0)
+        self.assertIsNotNone(adapter.appnp_gate.grad)
+        self.assertGreater(adapter.appnp_gate.grad.abs().item(), 0.0)
 
         optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
         optimizer.step()
@@ -92,7 +93,7 @@ class LongformerGCNTests(unittest.TestCase):
             labels=input_ids,
         ).loss
         second_loss.backward()
-        self.assertGreater(adapter.gcn.weight.grad.abs().sum().item(), 0.0)
+        self.assertGreater(adapter.appnp_projection.weight.grad.abs().sum().item(), 0.0)
 
     def test_zero_gate_is_exactly_baseline_equivalent(self):
         baseline = self.tiny_model().eval()
@@ -100,10 +101,11 @@ class LongformerGCNTests(unittest.TestCase):
         graph_config = GraphAttentionConfig(
             num_replaced_layers=2,
             replacement_strategy="uniform",
-            gcn_dropout=0.0,
-            gcn_initial_scale=0.0,
+            appnp_dropout=0.0,
+            appnp_initial_scale=0.0,
+            appnp_steps=2,
         )
-        add_longformer_gcn_adapters(adapted, graph_config)
+        add_longformer_appnp_adapters(adapted, graph_config)
         adapted.eval()
 
         input_ids = torch.randint(0, baseline.config.vocab_size, (2, 32))
@@ -127,13 +129,14 @@ class LongformerGCNTests(unittest.TestCase):
     def test_nonzero_gate_changes_output(self):
         baseline = self.tiny_model().eval()
         adapted = deepcopy(baseline)
-        add_longformer_gcn_adapters(
+        add_longformer_appnp_adapters(
             adapted,
             GraphAttentionConfig(
                 num_replaced_layers=1,
-                gcn_dropout=0.0,
-                gcn_activation="none",
-                gcn_initial_scale=0.1,
+                appnp_dropout=0.0,
+                appnp_activation="none",
+                appnp_initial_scale=0.1,
+                appnp_steps=2,
             ),
         )
         adapted.eval()
@@ -144,14 +147,40 @@ class LongformerGCNTests(unittest.TestCase):
             adapted_logits = adapted(input_ids=input_ids, attention_mask=attention_mask).logits
         self.assertFalse(torch.equal(baseline_logits, adapted_logits))
 
+    def test_more_appnp_steps_change_propagation(self):
+        model_k1 = self.tiny_model().eval()
+        model_k2 = deepcopy(model_k1)
+        common = {
+            "num_replaced_layers": 1,
+            "appnp_dropout": 0.0,
+            "appnp_activation": "none",
+            "appnp_initial_scale": 1.0,
+            "appnp_teleport_probability": 0.1,
+        }
+        add_longformer_appnp_adapters(
+            model_k1,
+            GraphAttentionConfig(appnp_steps=1, **common),
+        )
+        add_longformer_appnp_adapters(
+            model_k2,
+            GraphAttentionConfig(appnp_steps=2, **common),
+        )
+        input_ids = torch.randint(0, model_k1.config.vocab_size, (1, 32))
+        attention_mask = torch.ones_like(input_ids)
+        with torch.no_grad():
+            logits_k1 = model_k1(input_ids=input_ids, attention_mask=attention_mask).logits
+            logits_k2 = model_k2(input_ids=input_ids, attention_mask=attention_mask).logits
+        self.assertFalse(torch.equal(logits_k1, logits_k2))
+
     def test_residual_adapter_checkpoint_round_trip(self):
         model = self.tiny_model().eval()
         graph_config = GraphAttentionConfig(
             num_replaced_layers=1,
-            gcn_dropout=0.0,
-            gcn_initial_scale=0.05,
+            appnp_dropout=0.0,
+            appnp_initial_scale=0.05,
+            appnp_steps=2,
         )
-        add_longformer_gcn_adapters(model, graph_config)
+        add_longformer_appnp_adapters(model, graph_config)
         input_ids = torch.randint(0, model.config.vocab_size, (1, 32))
         attention_mask = torch.ones_like(input_ids)
         with torch.no_grad():
@@ -167,7 +196,11 @@ class LongformerGCNTests(unittest.TestCase):
 
     def test_vanilla_checkpoint_can_receive_adapters_when_loaded(self):
         baseline = self.tiny_model().eval()
-        graph_config = GraphAttentionConfig(num_replaced_layers=1, gcn_dropout=0.0)
+        graph_config = GraphAttentionConfig(
+            num_replaced_layers=1,
+            appnp_dropout=0.0,
+            appnp_steps=2,
+        )
         input_ids = torch.randint(0, baseline.config.vocab_size, (1, 32))
         attention_mask = torch.ones_like(input_ids)
         with torch.no_grad():
@@ -179,7 +212,7 @@ class LongformerGCNTests(unittest.TestCase):
             with torch.no_grad():
                 actual = adapted(input_ids=input_ids, attention_mask=attention_mask).logits
 
-        self.assertIsInstance(adapted.longformer.encoder.layer[-1], GraphLongformerLayer)
+        self.assertIsInstance(adapted.longformer.encoder.layer[-1], APPNPLongformerLayer)
         self.assertTrue(torch.equal(expected, actual))
 
 

@@ -13,7 +13,7 @@ from scripts.train_mlm import build_trainer
 
 
 def main() -> None:
-    args = parse_config_args("Evaluate a Longformer-GCN MLM checkpoint.")
+    args = parse_config_args("Evaluate a Longformer-APPNP MLM checkpoint.")
     if args.checkpoint is None:
         raise ValueError("--checkpoint is required for evaluation")
 

@@ -21,13 +21,13 @@ def _sliding_sum(values: torch.Tensor, radius: int) -> torch.Tensor:
     return (prefix[:, width:] - prefix[:, :-width]).to(dtype=original_dtype)
 
 
-class GraphLongformerLayer(nn.Module):
-    """Intact Longformer layer with a gated sparse-GCN residual adapter.
+class APPNPLongformerLayer(nn.Module):
+    """Intact Longformer layer with a gated sparse-APPNP residual adapter.
 
     The wrapped pretrained layer is always evaluated normally. Its output is
-    augmented with ``alpha * GCN(input)`` over the same local/global topology
-    used by Longformer. With alpha initialized to zero, the wrapper is exactly
-    equivalent to the original layer at initialization.
+    augmented with ``alpha * APPNP(input)`` over Longformer's local/global
+    topology. With alpha initialized to zero, the wrapper is exactly equivalent
+    to the original layer at initialization.
     """
 
     def __init__(
@@ -42,24 +42,30 @@ class GraphLongformerLayer(nn.Module):
         self.graph_config = graph_config
         self.attention_window = attention_window
         self.one_sided_window = attention_window // 2
-        self.gcn = nn.Linear(hidden_size, hidden_size, bias=graph_config.gcn_bias)
-        self.gcn_dropout = nn.Dropout(graph_config.gcn_dropout)
-        self.activation = ACT2FN[graph_config.gcn_activation] if graph_config.gcn_activation != "none" else None
-        gate_shape = (hidden_size,) if graph_config.gcn_gate_type == "channel" else ()
-        self.gcn_gate = nn.Parameter(torch.full(gate_shape, graph_config.gcn_initial_scale))
+        self.appnp_projection = nn.Linear(hidden_size, hidden_size, bias=graph_config.appnp_bias)
+        self.appnp_dropout = nn.Dropout(graph_config.appnp_dropout)
+        self.activation = (
+            ACT2FN[graph_config.appnp_activation]
+            if graph_config.appnp_activation != "none"
+            else None
+        )
+        gate_shape = (hidden_size,) if graph_config.appnp_gate_type == "channel" else ()
+        self.appnp_gate = nn.Parameter(torch.full(gate_shape, graph_config.appnp_initial_scale))
         self.latest_graph_stats = {}
-        self.reset_graph_parameters()
+        self.reset_appnp_parameters()
 
-    def reset_graph_parameters(self) -> None:
-        if self.graph_config.gcn_weight_init == "identity":
+    def reset_appnp_parameters(self) -> None:
+        if self.graph_config.appnp_weight_init == "identity":
             with torch.no_grad():
-                self.gcn.weight.copy_(torch.eye(self.gcn.out_features, dtype=self.gcn.weight.dtype))
-                if self.gcn.bias is not None:
-                    self.gcn.bias.zero_()
+                self.appnp_projection.weight.copy_(
+                    torch.eye(self.appnp_projection.out_features, dtype=self.appnp_projection.weight.dtype)
+                )
+                if self.appnp_projection.bias is not None:
+                    self.appnp_projection.bias.zero_()
         else:
-            nn.init.xavier_uniform_(self.gcn.weight)
-            if self.gcn.bias is not None:
-                nn.init.zeros_(self.gcn.bias)
+            nn.init.xavier_uniform_(self.appnp_projection.weight)
+            if self.appnp_projection.bias is not None:
+                nn.init.zeros_(self.appnp_projection.bias)
 
     @classmethod
     def from_longformer_layer(
@@ -68,7 +74,7 @@ class GraphLongformerLayer(nn.Module):
         model_config,
         layer_index: int,
         graph_config: GraphAttentionConfig,
-    ) -> "GraphLongformerLayer":
+    ) -> "APPNPLongformerLayer":
         windows = model_config.attention_window
         attention_window = windows[layer_index] if isinstance(windows, (list, tuple)) else windows
         return cls(source, model_config.hidden_size, attention_window, graph_config)
@@ -84,14 +90,15 @@ class GraphLongformerLayer(nn.Module):
             degree = degree - valid.to(dtype=degree.dtype)
         return degree.clamp_min(0.0) * valid.to(dtype=degree.dtype)
 
-    def _aggregate(
+    def _propagate_once(
         self,
-        hidden_states: torch.Tensor,
+        states: torch.Tensor,
         valid: torch.Tensor,
         global_mask: torch.Tensor,
+        degree: torch.Tensor,
     ) -> torch.Tensor:
-        degree = self._degrees(valid, global_mask).to(device=hidden_states.device)
-        source_states = hidden_states.float() if hidden_states.dtype in {torch.float16, torch.bfloat16} else hidden_states
+        original_dtype = states.dtype
+        source_states = states.float() if states.dtype in {torch.float16, torch.bfloat16} else states
         if self.graph_config.symmetric_normalization:
             source_states = source_states * degree.clamp_min(1.0).rsqrt().unsqueeze(-1)
 
@@ -110,8 +117,29 @@ class GraphLongformerLayer(nn.Module):
             aggregated = aggregated / degree.clamp_min(1.0).unsqueeze(-1)
 
         aggregated = aggregated * valid.unsqueeze(-1)
+        return aggregated.to(dtype=original_dtype)
+
+    def _appnp(
+        self,
+        hidden_states: torch.Tensor,
+        valid: torch.Tensor,
+        global_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        degree = self._degrees(valid, global_mask).to(device=hidden_states.device)
+        initial = self.appnp_projection(hidden_states)
+        if self.activation is not None:
+            initial = self.activation(initial)
+        initial = self.appnp_dropout(initial) * valid.unsqueeze(-1)
+
+        propagated = initial
+        teleport = self.graph_config.appnp_teleport_probability
+        for _ in range(self.graph_config.appnp_steps):
+            propagated = (
+                (1.0 - teleport) * self._propagate_once(propagated, valid, global_mask, degree)
+                + teleport * initial
+            )
         self._record_graph_stats(degree, valid)
-        return aggregated.to(dtype=hidden_states.dtype)
+        return propagated * valid.unsqueeze(-1)
 
     @torch.no_grad()
     def _record_graph_stats(self, degree: torch.Tensor, valid: torch.Tensor) -> None:
@@ -121,7 +149,11 @@ class GraphLongformerLayer(nn.Module):
             "graph_avg_degree": edges / valid_nodes.clamp_min(1),
             "graph_edges": edges,
             "graph_valid_nodes": valid_nodes,
-            "graph_residual_scale": self.gcn_gate.detach().abs().mean(),
+            "graph_residual_scale": self.appnp_gate.detach().abs().mean(),
+            "appnp_steps": torch.tensor(
+                float(self.graph_config.appnp_steps),
+                device=degree.device,
+            ),
         }
 
     def forward(
@@ -154,11 +186,10 @@ class GraphLongformerLayer(nn.Module):
         else:
             global_mask = is_index_global_attn & valid
 
-        aggregated = self._aggregate(hidden_states, valid, global_mask)
-        graph_output = self.gcn(aggregated)
-        if self.activation is not None:
-            graph_output = self.activation(graph_output)
-        graph_output = self.gcn_dropout(graph_output)
-        graph_output = graph_output * valid.unsqueeze(-1)
-        adapted_output = base_outputs[0] + self.gcn_gate * graph_output
+        appnp_output = self._appnp(hidden_states, valid, global_mask)
+        adapted_output = base_outputs[0] + self.appnp_gate * appnp_output
         return (adapted_output,) + base_outputs[1:]
+
+
+# Compatibility alias for older imports.
+GraphLongformerLayer = APPNPLongformerLayer

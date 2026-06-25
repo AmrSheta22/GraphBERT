@@ -1,5 +1,5 @@
 model_name_or_path: allenai/longformer-base-4096
-output_dir: outputs/longformer-gcn-wikitext103
+output_dir: outputs/longformer-appnp-wikitext103
 seed: 1337
 
 dataset:
@@ -13,18 +13,20 @@ dataset:
   global_attention_on_cls: true
 
 graph:
-  num_replaced_layers: 2        # legacy name: number of layers receiving GCN adapters
+  num_replaced_layers: 2        # legacy name: number of layers receiving APPNP adapters
   replacement_strategy: final  # adapter placement: final | intermediate | first | uniform | explicit
   layer_indices: []             # required when replacement_strategy is explicit
-  renormalize_adjacency: true
-  symmetric_normalization: false
+  renormalize_adjacency: false
+  symmetric_normalization: true
   add_self_loops: true
-  gcn_weight_init: identity     # identity | xavier
-  gcn_bias: true
-  gcn_activation: gelu          # none | gelu | relu | silu
-  gcn_dropout: 0.1
-  gcn_initial_scale: 0.0        # exact baseline equivalence at initialization
-  gcn_gate_type: scalar         # scalar | channel
+  appnp_steps: 8
+  appnp_teleport_probability: 0.1
+  appnp_weight_init: identity   # identity | xavier
+  appnp_bias: true
+  appnp_activation: gelu        # none | gelu | relu | silu
+  appnp_dropout: 0.1
+  appnp_initial_scale: 0.0      # exact baseline equivalence at initialization
+  appnp_gate_type: scalar       # scalar | channel
 
 training:
   do_train: true

@@ -64,7 +64,7 @@ def build_trainer(**kwargs) -> Trainer:
 
 
 def main() -> None:
-    args = parse_config_args("Train Longformer-GCN on masked language modeling.")
+    args = parse_config_args("Train Longformer-APPNP on masked language modeling.")
     config = load_config_with_overrides(args)
     prepare_reproducibility(config.seed)
     save_experiment_config(config, config.output_dir)

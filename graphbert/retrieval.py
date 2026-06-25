@@ -26,7 +26,7 @@ class RetrievalConfig:
 
 
 class LongContextRetriever(nn.Module):
-    """Single-vector or ColBERT-style retriever over Longformer-GCN."""
+    """Single-vector or ColBERT-style retriever over Longformer-APPNP."""
 
     def __init__(self, encoder, config: RetrievalConfig):
         super().__init__()

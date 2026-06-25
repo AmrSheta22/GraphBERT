@@ -22,18 +22,20 @@ class DatasetConfig:
 
 @dataclass
 class GraphAttentionConfig:
-    num_replaced_layers: int = 0 # shouldn't be replaced anymore
+    num_replaced_layers: int = 0
     replacement_strategy: str = "final"
     layer_indices: List[int] = field(default_factory=list)
     renormalize_adjacency: bool = True
     symmetric_normalization: bool = False
     add_self_loops: bool = True
-    gcn_weight_init: str = "identity"
-    gcn_bias: bool = True
-    gcn_activation: str = "gelu"
-    gcn_dropout: float = 0.1
-    gcn_initial_scale: float = 0.0
-    gcn_gate_type: str = "scalar"
+    appnp_steps: int = 8
+    appnp_teleport_probability: float = 0.1
+    appnp_weight_init: str = "identity"
+    appnp_bias: bool = True
+    appnp_activation: str = "gelu"
+    appnp_dropout: float = 0.1
+    appnp_initial_scale: float = 0.0
+    appnp_gate_type: str = "scalar"
 
     def validate(self, num_hidden_layers: Optional[int] = None) -> None:
         if self.replacement_strategy not in {"final", "intermediate", "first", "uniform", "explicit"}:
@@ -42,7 +44,7 @@ class GraphAttentionConfig:
             raise ValueError("graph.num_replaced_layers must be non-negative")
         if num_hidden_layers is not None and self.num_replaced_layers > num_hidden_layers:
             raise ValueError(
-                f"Cannot replace {self.num_replaced_layers} layers in a model with "
+                f"Cannot adapt {self.num_replaced_layers} layers in a model with "
                 f"{num_hidden_layers} hidden layers."
             )
         if self.replacement_strategy == "explicit":
@@ -54,16 +56,20 @@ class GraphAttentionConfig:
                 index < 0 or index >= num_hidden_layers for index in self.layer_indices
             ):
                 raise ValueError("graph.layer_indices contains an out-of-range layer index")
-        if self.gcn_weight_init not in {"identity", "xavier"}:
-            raise ValueError("graph.gcn_weight_init must be identity or xavier")
-        if self.gcn_activation not in {"none", "gelu", "relu", "silu"}:
-            raise ValueError("graph.gcn_activation must be none, gelu, relu, or silu")
-        if not 0.0 <= self.gcn_dropout < 1.0:
-            raise ValueError("graph.gcn_dropout must be in [0, 1)")
-        if self.gcn_gate_type not in {"scalar", "channel"}:
-            raise ValueError("graph.gcn_gate_type must be scalar or channel")
-        if not math.isfinite(self.gcn_initial_scale):
-            raise ValueError("graph.gcn_initial_scale must be finite")
+        if self.appnp_steps <= 0:
+            raise ValueError("graph.appnp_steps must be positive")
+        if not 0.0 < self.appnp_teleport_probability <= 1.0:
+            raise ValueError("graph.appnp_teleport_probability must be in (0, 1]")
+        if self.appnp_weight_init not in {"identity", "xavier"}:
+            raise ValueError("graph.appnp_weight_init must be identity or xavier")
+        if self.appnp_activation not in {"none", "gelu", "relu", "silu"}:
+            raise ValueError("graph.appnp_activation must be none, gelu, relu, or silu")
+        if not 0.0 <= self.appnp_dropout < 1.0:
+            raise ValueError("graph.appnp_dropout must be in [0, 1)")
+        if self.appnp_gate_type not in {"scalar", "channel"}:
+            raise ValueError("graph.appnp_gate_type must be scalar or channel")
+        if not math.isfinite(self.appnp_initial_scale):
+            raise ValueError("graph.appnp_initial_scale must be finite")
         if self.renormalize_adjacency and self.symmetric_normalization:
             raise ValueError("Choose row or symmetric normalization, not both")
 
@@ -101,7 +107,7 @@ class TrainingConfig:
 @dataclass
 class ExperimentConfig:
     model_name_or_path: str = "allenai/longformer-base-4096"
-    output_dir: str = "outputs/longformer-gcn"
+    output_dir: str = "outputs/longformer-appnp"
     seed: int = 1337
     dataset: DatasetConfig = field(default_factory=DatasetConfig)
     graph: GraphAttentionConfig = field(default_factory=GraphAttentionConfig)
