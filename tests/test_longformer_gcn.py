@@ -215,6 +215,38 @@ class LongformerAPPNPTests(unittest.TestCase):
         self.assertIsInstance(adapted.longformer.encoder.layer[-1], APPNPLongformerLayer)
         self.assertTrue(torch.equal(expected, actual))
 
+    def test_checkpoint_with_legacy_layernorm_gamma_beta_keys_loads(self):
+        baseline = self.tiny_model().eval()
+        graph_config = GraphAttentionConfig(
+            num_replaced_layers=1,
+            appnp_dropout=0.0,
+            appnp_steps=2,
+        )
+        input_ids = torch.randint(0, baseline.config.vocab_size, (1, 32))
+        attention_mask = torch.ones_like(input_ids)
+        with torch.no_grad():
+            expected = baseline(input_ids=input_ids, attention_mask=attention_mask).logits
+
+        with TemporaryDirectory(ignore_cleanup_errors=True) as checkpoint:
+            baseline.config.save_pretrained(checkpoint)
+            checkpoint_path = f"{checkpoint}/pytorch_model.bin"
+            state_dict = baseline.state_dict()
+            legacy_state_dict = {}
+            for key, value in state_dict.items():
+                if key.endswith(".LayerNorm.weight"):
+                    key = f"{key[:-len('.weight')]}.gamma"
+                elif key.endswith(".LayerNorm.bias"):
+                    key = f"{key[:-len('.bias')]}.beta"
+                legacy_state_dict[key] = value
+            torch.save(legacy_state_dict, checkpoint_path)
+
+            adapted = load_graph_bert_checkpoint(checkpoint, graph_config).eval()
+            with torch.no_grad():
+                actual = adapted(input_ids=input_ids, attention_mask=attention_mask).logits
+
+        self.assertIsInstance(adapted.longformer.encoder.layer[-1], APPNPLongformerLayer)
+        self.assertTrue(torch.equal(expected, actual))
+
 
 if __name__ == "__main__":
     unittest.main()

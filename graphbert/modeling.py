@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable, List
+from typing import Dict, Iterable, List
 
 import torch
 from safetensors.torch import load_file as load_safetensors
@@ -81,6 +81,18 @@ def build_graph_bert_for_mlm(
     return model
 
 
+def normalize_legacy_layernorm_keys(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    """Map older LayerNorm gamma/beta checkpoint names to PyTorch weight/bias names."""
+    normalized = {}
+    for key, value in state_dict.items():
+        if key.endswith(".LayerNorm.gamma"):
+            key = f"{key[:-len('.gamma')]}.weight"
+        elif key.endswith(".LayerNorm.beta"):
+            key = f"{key[:-len('.beta')]}.bias"
+        normalized[key] = value
+    return normalized
+
+
 def load_graph_bert_checkpoint(
     checkpoint: str,
     graph_config: GraphAttentionConfig,
@@ -98,6 +110,7 @@ def load_graph_bert_checkpoint(
         state_dict = torch.load(pytorch_path, map_location="cpu")
     else:
         raise FileNotFoundError(f"No model.safetensors or pytorch_model.bin found in {checkpoint}")
+    state_dict = normalize_legacy_layernorm_keys(state_dict)
 
     has_appnp_adapters = any(
         ".appnp_projection." in key or key.endswith(".appnp_gate")
