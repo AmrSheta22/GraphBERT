@@ -21,7 +21,8 @@ set -Eeuo pipefail
 # Submit from the repository root:
 #   sbatch scripts/slurm_train_msmarco_appnp_single_gpu.sh
 
-REPO_DIR="${REPO_DIR:-$PWD}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="${REPO_DIR:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
 CONFIG="${CONFIG:-configs/graphbert_wikitext103.yaml}"
 SOURCE_MODEL="${SOURCE_MODEL:-allenai/longformer-base-4096}"
 OUTPUT_DIR="${OUTPUT_DIR:-outputs/mldr/appnp-from-longformer-msmarco-single-gpu}"
@@ -34,6 +35,7 @@ DOCUMENT_MAX_LENGTH="${DOCUMENT_MAX_LENGTH:-512}"
 LOGGING_STEPS="${LOGGING_STEPS:-10}"
 FP16_FLAG="${FP16_FLAG:---fp16}"
 GRADIENT_CHECKPOINTING_FLAG="${GRADIENT_CHECKPOINTING_FLAG:---gradient-checkpointing}"
+VENV_DIR="${VENV_DIR:-${REPO_DIR}/venv}"
 
 cd "${REPO_DIR}"
 mkdir -p outputs/slurm "${OUTPUT_DIR}"
@@ -43,10 +45,16 @@ mkdir -p outputs/slurm "${OUTPUT_DIR}"
 # module load CUDA
 # module load python
 
-if [[ -f ".venv/bin/activate" ]]; then
-  source .venv/bin/activate
-elif [[ -f "venv/bin/activate" ]]; then
-  source venv/bin/activate
+if [[ -f "${VENV_DIR}/bin/activate" ]]; then
+  source "${VENV_DIR}/bin/activate"
+elif [[ -f "${REPO_DIR}/.venv/bin/activate" ]]; then
+  source "${REPO_DIR}/.venv/bin/activate"
+elif [[ -f "${VENV_DIR}/Scripts/activate" ]]; then
+  source "${VENV_DIR}/Scripts/activate"
+else
+  echo "Could not find a virtual environment activation script." >&2
+  echo "Looked for: ${VENV_DIR}/bin/activate, ${REPO_DIR}/.venv/bin/activate, ${VENV_DIR}/Scripts/activate" >&2
+  exit 1
 fi
 
 echo "Job started at: $(date)"
@@ -57,6 +65,7 @@ echo "Config: ${CONFIG}"
 echo "Source model: ${SOURCE_MODEL}"
 echo "Output directory: ${OUTPUT_DIR}"
 echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}"
+echo "Python executable: $(command -v python)"
 python --version
 python - <<'PY'
 import torch
