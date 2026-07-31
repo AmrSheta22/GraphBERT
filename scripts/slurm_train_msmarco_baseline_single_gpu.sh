@@ -7,8 +7,8 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --time=24:00:00
-#SBATCH --output=%x-%j.out
-#SBATCH --error=%x-%j.err
+#SBATCH --output=outputs/slurm/%x-%j.out
+#SBATCH --error=outputs/slurm/%x-%j.err
 
 set -Eeuo pipefail
 
@@ -22,8 +22,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="${REPO_DIR:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
 BASE_CONFIG="${BASE_CONFIG:-configs/graphbert_wikitext103.yaml}"
 SOURCE_MODEL="${SOURCE_MODEL:-allenai/longformer-base-4096}"
-RUN_ROOT="${RUN_ROOT:-${SCRATCH:-${HOME}}/graphbert-runs}"
-OUTPUT_DIR="${OUTPUT_DIR:-${RUN_ROOT}/mldr/baseline-msmarco-single-gpu}"
+OUTPUT_DIR="${OUTPUT_DIR:-outputs/mldr/baseline-msmarco-single-gpu}"
 ARCHITECTURE="${ARCHITECTURE:-single}"
 BATCH_SIZE="${BATCH_SIZE:-16}"
 GRAD_ACCUM="${GRAD_ACCUM:-1}"
@@ -36,10 +35,6 @@ GRADIENT_CHECKPOINTING_FLAG="${GRADIENT_CHECKPOINTING_FLAG:---gradient-checkpoin
 VENV_DIR="${VENV_DIR:-${REPO_DIR}/venv}"
 
 cd "${REPO_DIR}"
-mkdir -p "${RUN_ROOT}/slurm" "${OUTPUT_DIR}"
-if [[ -n "${SLURM_JOB_ID:-}" ]]; then
-  exec > >(tee -a "${RUN_ROOT}/slurm/${SLURM_JOB_NAME:-longformer-msmarco}-${SLURM_JOB_ID}.out") 2> >(tee -a "${RUN_ROOT}/slurm/${SLURM_JOB_NAME:-longformer-msmarco}-${SLURM_JOB_ID}.err" >&2)
-fi
 
 # Uncomment or edit these lines to match the modules available on BA-HPC.
 # module clear
@@ -58,7 +53,7 @@ else
   exit 1
 fi
 
-CONFIG="${OUTPUT_DIR}/resolved_retrieval_train_config.yaml"
+CONFIG="${SLURM_TMPDIR:-/tmp}/graphbert_baseline_retrieval_config_${SLURM_JOB_ID:-local}.yaml"
 python - "${BASE_CONFIG}" "${CONFIG}" <<'PY'
 import sys
 from pathlib import Path
@@ -82,7 +77,6 @@ echo "Host: $(hostname)"
 echo "Working directory: $(pwd)"
 echo "Config: ${CONFIG}"
 echo "Source model: ${SOURCE_MODEL}"
-echo "Run root: ${RUN_ROOT}"
 echo "Output directory: ${OUTPUT_DIR}"
 echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}"
 echo "Python executable: $(command -v python)"
