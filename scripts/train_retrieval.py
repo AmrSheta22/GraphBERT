@@ -49,6 +49,7 @@ def parse_args():
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--fp16", action="store_true")
     parser.add_argument("--gradient-checkpointing", action="store_true")
+    parser.add_argument("--logging-steps", type=int, default=10, help="Print retrieval loss every N optimizer steps.")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     return parser.parse_args()
 
@@ -237,6 +238,18 @@ def main():
                 scheduler.step()
                 optimizer.zero_grad(set_to_none=True)
                 global_step += 1
+                if args.logging_steps > 0 and global_step % args.logging_steps == 0:
+                    tqdm.write(
+                        json.dumps(
+                            {
+                                "epoch": epoch + 1,
+                                "optimizer_step": global_step,
+                                "loader_step": step,
+                                "loss": float(loss.detach().item()),
+                                "learning_rate": scheduler.get_last_lr()[0],
+                            }
+                        )
+                    )
             progress.set_postfix(loss=f"{loss.detach().item():.4f}", step=global_step)
 
     model.save(args.output_dir, tokenizer)

@@ -237,7 +237,7 @@ run_retrieval_train() {
     --max-samples "${RETRIEVAL_MAX_SAMPLES}" \
     --gradient-checkpointing \
     ${RETRIEVAL_FP16_FLAG} \
-    > "${console_log}" 2>&1
+    2>&1 | tee "${console_log}"
   printf '{"run_id":"%s","source_model":"%s","finished_at":"%s"}\n' "${run_id}" "${source_model}" "$(date +%s)" > "${retrieval_dir}/RETRIEVAL_TRAIN_FINISHED"
   echo "Finished MS MARCO retrieval training for ${run_id}"
 }
