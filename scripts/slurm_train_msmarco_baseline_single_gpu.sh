@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=graphbert-msmarco
-#SBATCH --account=g.projectname
+#SBATCH --job-name=longformer-msmarco
+#SBATCH --account=g.alex116u1
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
@@ -16,13 +16,12 @@ set -Eeuo pipefail
 #   #SBATCH --account=g.<your_ba_hpc_project>
 #
 # Submit from the repository root:
-#   sbatch scripts/slurm_train_msmarco_single_gpu.sh
+#   sbatch scripts/slurm_train_msmarco_baseline_single_gpu.sh
 
 REPO_DIR="${REPO_DIR:-$PWD}"
 BASE_CONFIG="${BASE_CONFIG:-configs/graphbert_wikitext103.yaml}"
-RUN_KIND="${RUN_KIND:-baseline}"
 SOURCE_MODEL="${SOURCE_MODEL:-allenai/longformer-base-4096}"
-OUTPUT_DIR="${OUTPUT_DIR:-outputs/mldr/${RUN_KIND}-msmarco-single-gpu}"
+OUTPUT_DIR="${OUTPUT_DIR:-outputs/mldr/baseline-msmarco-single-gpu}"
 ARCHITECTURE="${ARCHITECTURE:-single}"
 BATCH_SIZE="${BATCH_SIZE:-16}"
 GRAD_ACCUM="${GRAD_ACCUM:-1}"
@@ -48,30 +47,27 @@ elif [[ -f "venv/bin/activate" ]]; then
 fi
 
 CONFIG="${OUTPUT_DIR}/resolved_retrieval_train_config.yaml"
-python - "${BASE_CONFIG}" "${CONFIG}" "${RUN_KIND}" <<'PY'
+python - "${BASE_CONFIG}" "${CONFIG}" <<'PY'
 import sys
 from pathlib import Path
 
 import yaml
 
-base_config, target_config, run_kind = sys.argv[1:]
+base_config, target_config = sys.argv[1:]
 with Path(base_config).open("r", encoding="utf-8") as handle:
     config = yaml.safe_load(handle)
 
-if run_kind == "baseline":
-    config["graph"]["num_replaced_layers"] = 0
-    config["graph"]["layer_indices"] = []
-elif run_kind != "appnp":
-    raise SystemExit("RUN_KIND must be either baseline or appnp")
+config["graph"]["num_replaced_layers"] = 0
+config["graph"]["layer_indices"] = []
 
 with Path(target_config).open("w", encoding="utf-8") as handle:
     yaml.safe_dump(config, handle, sort_keys=False)
 PY
 
 echo "Job started at: $(date)"
+echo "Run: baseline Longformer -> MS MARCO"
 echo "Host: $(hostname)"
 echo "Working directory: $(pwd)"
-echo "Run kind: ${RUN_KIND}"
 echo "Config: ${CONFIG}"
 echo "Source model: ${SOURCE_MODEL}"
 echo "Output directory: ${OUTPUT_DIR}"
