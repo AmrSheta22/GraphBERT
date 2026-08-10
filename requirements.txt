@@ -1,4 +1,7 @@
-torch>=2.1
+--index-url https://download.pytorch.org/whl/cu118
+--extra-index-url https://pypi.org/simple
+
+torch==2.6.0
 transformers>=4.40
 datasets>=2.18
 accelerate>=0.28
