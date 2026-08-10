@@ -1,0 +1,5 @@
+model_name_or_path: allenai/longformer-base-4096
+seed: 1337
+
+graph:
+  num_replaced_layers: 0

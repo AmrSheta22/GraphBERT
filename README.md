@@ -290,10 +290,10 @@ Useful controls:
 Two root-level scripts run the controlled comparison independently:
 
 ```bash
-bash run_appnp_long_retrieval.sh
-bash run_longformer_long_retrieval.sh
+sbatch run_appnp_long_retrieval.sh
+sbatch run_longformer_long_retrieval.sh
 ```
 
 Each script selects the highest numbered `checkpoint-N` under its default source directory, falling back to `allenai/longformer-base-4096` when no local checkpoint exists. Override this with `SOURCE_ROOT=/path/to/run` or `SOURCE_MODEL=/exact/checkpoint`.
 
-Both models train the same 128-dimensional retrieval head for 100 steps with a frozen Longformer backbone. The APPNP run additionally trains its APPNP adapters. Outputs are kept under `outputs/synthetic-retrieval-comparison/{appnp,longformer}`. After either run, `outputs/synthetic-retrieval-comparison/comparison.json` is refreshed; after both runs it identifies the highest-scoring output checkpoint by mean nDCG@10 and reports the winner at each context length.
+Both one-GPU Slurm jobs activate `venv/bin/activate` by default; override it with `VENV_DIR=/path/to/venv`. They train the same 128-dimensional retrieval head for 100 steps with a frozen Longformer backbone. The APPNP job additionally trains its APPNP adapters. Outputs are kept under `outputs/synthetic-retrieval-comparison/{appnp,longformer}`. After either run, `outputs/synthetic-retrieval-comparison/comparison.json` is refreshed; after both runs it identifies the highest-scoring output checkpoint by mean nDCG@10 and reports the winner at each context length.
