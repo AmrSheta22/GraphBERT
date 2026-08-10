@@ -124,6 +124,36 @@ class LongContextRetriever(nn.Module):
         return embeddings, mask
 
 
+def configure_trainable_parameters(model: LongContextRetriever, mode: str) -> dict:
+    """Freeze parameters for low-compute retrieval adaptation and return a summary."""
+    valid_modes = {"full", "adapters", "head", "adapters+head"}
+    if mode not in valid_modes:
+        raise ValueError(f"mode must be one of {sorted(valid_modes)}, got {mode!r}")
+
+    for name, parameter in model.named_parameters():
+        is_adapter = ".appnp_projection." in name or name.endswith(".appnp_gate")
+        is_head = name.startswith("projection.")
+        parameter.requires_grad = (
+            mode == "full"
+            or (mode in {"adapters", "adapters+head"} and is_adapter)
+            or (mode in {"head", "adapters+head"} and is_head)
+        )
+
+    trainable = sum(parameter.numel() for parameter in model.parameters() if parameter.requires_grad)
+    total = sum(parameter.numel() for parameter in model.parameters())
+    if trainable == 0:
+        raise ValueError(
+            f"trainable mode {mode!r} selected no parameters; configure APPNP adapters "
+            "or a non-zero retrieval projection"
+        )
+    return {
+        "mode": mode,
+        "trainable_parameters": trainable,
+        "total_parameters": total,
+        "trainable_fraction": trainable / total,
+    }
+
+
 def load_retrieval_tokenizer(checkpoint_or_model: str):
     return AutoTokenizer.from_pretrained(checkpoint_or_model, use_fast=True)
 

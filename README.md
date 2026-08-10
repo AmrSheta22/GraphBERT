@@ -229,3 +229,71 @@ bash scripts/run_mldr_evaluation.sh
 For paper-style model selection, repeat MS MARCO training over a learning-rate sweep and select the checkpoint using a fixed BEIR development subset before running MLDR. Do not select learning rates on the MLDR test split.
 
 For inexpensive smoke tests, both evaluators accept `--max-corpus-documents`; results from a truncated corpus are not benchmark scores.
+
+## Minimal-compute long-range retrieval
+
+The MS MARCO recipe above is intended for a full retrieval benchmark and is not the fastest way to test whether the model uses distant context. Three findings motivate a smaller diagnostic:
+
+- [LongEmbed (EMNLP 2024)](https://aclanthology.org/2024.emnlp-main.47/) evaluates long-context embedding retrieval with synthetic passkey and needle tasks. Its synthetic test has 400 queries and 800 documents, controls target position and document length, and the paper also reports effective training-free extension methods.
+- [Improving Text Embeddings with Large Language Models (ACL 2024)](https://aclanthology.org/2024.acl-long.642/) shows that synthetic contrastive embedding tuning can work in fewer than 1,000 optimizer steps.
+- [RULER (2024)](https://arxiv.org/abs/2404.06654) reinforces that length and needle position should be controlled independently because nominal context size can overstate effective context size.
+
+This repository therefore includes a generated-on-demand passkey retrieval stage. It downloads no dataset, places the target at 10%, 50%, or 90% of the document, and trains only the APPNP adapter parameters. The recommended run uses 512 triplets and stops after 100 optimizer steps:
+
+```bash
+bash scripts/run_minimal_synthetic_retrieval.sh
+```
+
+Equivalent training command:
+
+```bash
+python scripts/train_retrieval.py \
+  --config configs/graphbert_wikitext103.yaml \
+  --source-model allenai/longformer-base-4096 \
+  --output-dir outputs/synthetic-retrieval/appnp-100-steps \
+  --stage synthetic \
+  --architecture single \
+  --trainable-mode adapters \
+  --synthetic-samples 512 \
+  --synthetic-document-words 550 \
+  --document-max-length 1024 \
+  --batch-size 2 \
+  --gradient-accumulation-steps 2 \
+  --epochs 10 \
+  --max-steps 100 \
+  --learning-rate 5e-4 \
+  --gradient-checkpointing \
+  --fp16
+```
+
+Evaluate generalization to longer documents and to early, middle, and late targets:
+
+```bash
+python scripts/evaluate_synthetic_retrieval.py \
+  --checkpoint outputs/synthetic-retrieval/appnp-100-steps \
+  --output-dir outputs/synthetic-retrieval/eval \
+  --lengths 512 1024 2048 4096 \
+  --positions 0.1 0.5 0.9
+```
+
+The evaluator writes `metrics.json` with nDCG@10, Recall@1, top-1 accuracy by target position, and a needle-retention check that detects accidental tokenizer truncation. This is a focused diagnostic inspired by LongEmbed and RULER, not a replacement for their official benchmarks or for MLDR.
+
+Useful controls:
+
+- `--max-steps` places a hard cap on optimizer updates for any retrieval stage.
+- `--trainable-mode adapters` freezes the pretrained Longformer and trains APPNP projections/gates only.
+- `--trainable-mode head` trains only a configured retrieval projection; `adapters+head` trains both.
+- Use `--trainable-mode full` for the original full fine-tuning behavior.
+
+### Separate APPNP and Longformer comparison runs
+
+Two root-level scripts run the controlled comparison independently:
+
+```bash
+bash run_appnp_long_retrieval.sh
+bash run_longformer_long_retrieval.sh
+```
+
+Each script selects the highest numbered `checkpoint-N` under its default source directory, falling back to `allenai/longformer-base-4096` when no local checkpoint exists. Override this with `SOURCE_ROOT=/path/to/run` or `SOURCE_MODEL=/exact/checkpoint`.
+
+Both models train the same 128-dimensional retrieval head for 100 steps with a frozen Longformer backbone. The APPNP run additionally trains its APPNP adapters. Outputs are kept under `outputs/synthetic-retrieval-comparison/{appnp,longformer}`. After either run, `outputs/synthetic-retrieval-comparison/comparison.json` is refreshed; after both runs it identifies the highest-scoring output checkpoint by mean nDCG@10 and reports the winner at each context length.

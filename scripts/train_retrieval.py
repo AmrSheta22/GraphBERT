@@ -18,7 +18,14 @@ from transformers import get_linear_schedule_with_warmup
 
 from graphbert.config import load_experiment_config
 from graphbert.mldr import load_mldr
-from graphbert.retrieval import LongContextRetriever, load_retrieval_tokenizer, maxsim_scores, tokenize_texts
+from graphbert.retrieval import (
+    LongContextRetriever,
+    configure_trainable_parameters,
+    load_retrieval_tokenizer,
+    maxsim_scores,
+    tokenize_texts,
+)
+from graphbert.synthetic_retrieval import SyntheticNeedleDataset
 
 MSMARCO_DATASET = "sentence-transformers/msmarco-co-condenser-margin-mse-sym-mnrl-mean-v1"
 
@@ -28,16 +35,23 @@ def parse_args():
     parser.add_argument("--config", required=True, help="GraphBERT experiment config used to reconstruct the encoder.")
     parser.add_argument("--source-model", required=True, help="MLM checkpoint/HF model, or prior retrieval checkpoint.")
     parser.add_argument("--output-dir", required=True)
-    parser.add_argument("--stage", choices=["msmarco", "mldr"], required=True)
+    parser.add_argument("--stage", choices=["msmarco", "mldr", "synthetic"], required=True)
     parser.add_argument("--architecture", choices=["single", "colbert"], default="single")
     parser.add_argument("--pooling", choices=["mean", "cls"], default="mean")
     parser.add_argument("--projection-dim", type=int, default=128)
+    parser.add_argument(
+        "--single-projection-dim",
+        type=int,
+        default=0,
+        help="Optional trainable projection for the single-vector architecture; 0 preserves prior behavior.",
+    )
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--gradient-accumulation-steps", type=int, default=1)
     parser.add_argument("--learning-rate", type=float, default=2e-5)
     parser.add_argument("--weight-decay", type=float, default=0.01)
     parser.add_argument("--warmup-ratio", type=float, default=0.05)
     parser.add_argument("--epochs", type=int, default=1)
+    parser.add_argument("--max-steps", type=int, default=0, help="Stop after this many optimizer steps; 0 uses all data.")
     parser.add_argument("--max-samples", type=int, default=1_250_000)
     parser.add_argument("--query-max-length", type=int, default=64)
     parser.add_argument("--document-max-length", type=int, default=None)
@@ -50,12 +64,25 @@ def parse_args():
     parser.add_argument("--fp16", action="store_true")
     parser.add_argument("--gradient-checkpointing", action="store_true")
     parser.add_argument("--logging-steps", type=int, default=10, help="Print retrieval loss every N optimizer steps.")
+    parser.add_argument(
+        "--trainable-mode",
+        choices=["full", "adapters", "head", "adapters+head"],
+        default="full",
+        help="Freeze the Longformer backbone for inexpensive adapter/head-only tuning.",
+    )
+    parser.add_argument("--synthetic-samples", type=int, default=2048)
+    parser.add_argument(
+        "--synthetic-document-words", type=int, default=700,
+        help="Approximate synthetic haystack length before tokenizer truncation.",
+    )
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     return parser.parse_args()
 
 
 def normalize_example(row, stage):
     if stage == "msmarco":
+        return {"query": row["query"], "positive": row["positive"], "negative": row["negative"]}
+    if stage == "synthetic":
         return {"query": row["query"], "positive": row["positive"], "negative": row["negative"]}
     positives = row["positive_passages"]
     negatives = row["negative_passages"]
@@ -92,6 +119,12 @@ class ColBERTDistillationDataset(Dataset):
 
 
 def load_training_data(args):
+    if args.stage == "synthetic":
+        return SyntheticNeedleDataset(
+            num_samples=min(args.synthetic_samples, args.max_samples) if args.max_samples else args.synthetic_samples,
+            document_words=args.synthetic_document_words,
+            seed=args.seed,
+        )
     if args.stage == "msmarco" and args.architecture == "colbert":
         return ColBERTDistillationDataset(args.max_samples, args.seed)
     if args.stage == "msmarco":
@@ -180,8 +213,10 @@ def main():
         if args.architecture == "colbert" and model.retrieval_config.projection_dim <= 0:
             raise ValueError("The source retrieval checkpoint is not a ColBERT model.")
     else:
-        projection_dim = args.projection_dim if args.architecture == "colbert" else 0
-        document_max_length = args.document_max_length or (512 if args.stage == "msmarco" else 4096)
+        projection_dim = args.projection_dim if args.architecture == "colbert" else args.single_projection_dim
+        document_max_length = args.document_max_length or (
+            512 if args.stage == "msmarco" else 1024 if args.stage == "synthetic" else 4096
+        )
         model = LongContextRetriever.from_source(
             args.source_model,
             experiment.graph,
@@ -191,12 +226,16 @@ def main():
             document_max_length=document_max_length,
         )
         tokenizer = load_retrieval_tokenizer(args.source_model)
-    default_document_length = 180 if args.architecture == "colbert" and args.stage == "msmarco" else (512 if args.stage == "msmarco" else 4096)
+    default_document_length = 180 if args.architecture == "colbert" and args.stage == "msmarco" else (
+        512 if args.stage == "msmarco" else 1024 if args.stage == "synthetic" else 4096
+    )
     args.document_max_length = args.document_max_length or default_document_length
     if args.architecture == "colbert" and args.stage == "msmarco" and args.query_max_length == 64:
         args.query_max_length = 32
     model.retrieval_config.query_max_length = args.query_max_length
     model.retrieval_config.document_max_length = args.document_max_length
+    trainable_summary = configure_trainable_parameters(model, args.trainable_mode)
+    print(json.dumps({"trainable": trainable_summary}, indent=2))
     if args.gradient_checkpointing:
         model.encoder.gradient_checkpointing_enable()
     model.to(device).train()
@@ -209,8 +248,13 @@ def main():
         num_workers=0 if args.architecture == "colbert" else args.num_workers,
         collate_fn=RetrievalCollator(args.stage, args.architecture, args.colbert_candidates),
     )
-    update_steps = math.ceil(len(loader) / args.gradient_accumulation_steps) * args.epochs
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
+    available_update_steps = math.ceil(len(loader) / args.gradient_accumulation_steps) * args.epochs
+    update_steps = min(available_update_steps, args.max_steps) if args.max_steps > 0 else available_update_steps
+    optimizer = torch.optim.AdamW(
+        (parameter for parameter in model.parameters() if parameter.requires_grad),
+        lr=args.learning_rate,
+        weight_decay=args.weight_decay,
+    )
     scheduler = get_linear_schedule_with_warmup(
         optimizer,
         num_warmup_steps=int(update_steps * args.warmup_ratio),
@@ -251,10 +295,19 @@ def main():
                         )
                     )
             progress.set_postfix(loss=f"{loss.detach().item():.4f}", step=global_step)
+            if args.max_steps > 0 and global_step >= args.max_steps:
+                break
+        if args.max_steps > 0 and global_step >= args.max_steps:
+            break
 
     model.save(args.output_dir, tokenizer)
     with (Path(args.output_dir) / "training_args.json").open("w", encoding="utf-8") as handle:
-        json.dump(vars(args), handle, indent=2, default=str)
+        json.dump(
+            {**vars(args), "trainable_summary": trainable_summary, "completed_steps": global_step},
+            handle,
+            indent=2,
+            default=str,
+        )
 
 
 if __name__ == "__main__":
